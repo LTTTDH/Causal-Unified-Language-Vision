@@ -9,12 +9,12 @@ image_bath=4
 test_batch=4
 image_resol=1024
 
-CUDA_VISIBLE_DEVICES=$GPU_DEVICE mpirun -n $n_gpu python lbk_entry.py train \
+CUDA_VISIBLE_DEVICES=$GPU_DEVICE mpirun -n $n_gpu python entry.py train \
             --conf_files configs/cuvola_step1.yaml \
             --overrides \
             FP16 True \
             PORT $port \
-            WANDB False \
+            WANDB True \
             MODEL.DECODER.CAPTIONING_WEIGHT 8 \
             MODEL.DECODER.RETRIEVAL_WEIGHT 8 \
             MODEL.DECODER.TOP_GROUNDING_LAYERS 6 \

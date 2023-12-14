@@ -53,7 +53,7 @@ class UtilsTrainer(DistributedTrainer):
         if self.opt['FP16']:
             from torch.cuda.amp import GradScaler
             self.grad_scaler = GradScaler()
-            logger.warning("PyTorch AMP GradScaler initialized.")
+            # logger.warning("PyTorch AMP GradScaler initialized.")
 
         for module_name in self.model_names:
             if self.opt['world_size'] > 1:

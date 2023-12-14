@@ -78,6 +78,7 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
 
         results = self._eval_on_set(self.save_folder)
         if self.opt['rank'] == 0: self.dictionary_display(results)
+        if self.opt['rank'] == 0 and self.opt['WANDB']: wandb.log(results)
         return results
 
     def _eval_on_set(self, save_folder):
@@ -88,8 +89,8 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
                 results = self.pipeline.evaluate_model(self, save_folder)
         else:        
             results = self.pipeline.evaluate_model(self, save_folder)
-        if self.opt['rank'] == 0:
-            logger.info(results)
+        # if self.opt['rank'] == 0:
+        #     logger.info(results)
         return results
 
     def compute_loss(self, forward_func, batch):

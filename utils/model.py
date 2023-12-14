@@ -36,7 +36,7 @@ def align_and_update_state_dicts(model_state_dict, ckpt_state_dict):
     unmatched_log = []
     unloaded_log = []
 
-    filtered_model_keys = list(filter(lambda x: not x.startswith('llm.'), model_keys)) # CUVOLA
+    filtered_model_keys = list(filter(lambda x: not x.startswith('llm.'), model_keys)) # CuVOLA
     for model_key in filtered_model_keys:
         model_weight = model_state_dict[model_key]
         if model_key in ckpt_keys:
@@ -50,13 +50,7 @@ def align_and_update_state_dicts(model_state_dict, ckpt_state_dict):
         else:
             unloaded_log.append("*UNLOADED* {}, Model Shape: {}".format(model_key, model_weight.shape))
             
-    if is_main_process():
-        for info in matched_log:
-            logger.info(info)
-        for info in unloaded_log:
-            logger.warning(info)
-        for key in ckpt_keys:
-            logger.warning("$UNUSED$ {}, Ckpt Shape: {}".format(key, ckpt_state_dict[key].shape))
-        for info in unmatched_log:
-            logger.warning(info)
+    # [print(x) for x in matched_log]
+    # [print(x) for x in unmatched_log]
+    # [print(x) for x in unloaded_log]
     return result_dicts

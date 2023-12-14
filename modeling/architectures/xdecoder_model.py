@@ -29,7 +29,7 @@ from ..language.loss import vl_similarity, image_text_contrastive_loss_queue
 from utils.prompt_engineering import prompt_engineering
 from utils.constants import COCO_PANOPTIC_CLASSES
 
-# CUVOLA
+# CuVOLA
 from llm.load_llm import prepare_llm
 
 st = LancasterStemmer()
@@ -95,9 +95,9 @@ class GeneralizedXdecoder(nn.Module):
         super().__init__()
         self.backbone = backbone
         self.sem_seg_head = sem_seg_head
-        self.llm = llm # CUVOLA
-        self.llm_tokenizer = llm_tokenizer # CUVOLA
-        self.mlp = mlp # CUVOLA
+        self.llm = llm # CuVOLA
+        self.llm_tokenizer = llm_tokenizer # CuVOLA
+        self.mlp = mlp # CuVOLA
         self.criterion = criterion
         self.losses = losses
         self.num_queries = num_queries
@@ -169,7 +169,7 @@ class GeneralizedXdecoder(nn.Module):
         lang_encoder = build_language_encoder(cfg)        
         sem_seg_head = build_xdecoder_head(cfg, backbone.output_shape(), lang_encoder, extra)
 
-        # CUVOLA
+        # CuVOLA
         if cfg['LLM']['LOAD_LLM']:
             bits = cfg['LLM']['BITS']
             llm, llm_tokenizer, _ = prepare_llm(bits=bits)
@@ -301,7 +301,7 @@ class GeneralizedXdecoder(nn.Module):
                     segments_info (list[dict]): Describe each segment in `panoptic_seg`.
                         Each dict contains keys "id", "category_id", "isthing".
         """
-        # CUVOLA
+        # CuVOLA
         self.connector_eval_and_freeze()
 
         if self.training:
@@ -356,7 +356,7 @@ class GeneralizedXdecoder(nn.Module):
         #     else:
         #         return self.evaluate(batched_inputs)
 
-    # CUVOLA
+    # CuVOLA
     def connector_eval_and_freeze(self):
         connector_model_list = [self.backbone, self.sem_seg_head]
         for model in connector_model_list:
@@ -376,23 +376,20 @@ class GeneralizedXdecoder(nn.Module):
         if "instances" in batched_inputs[0]:
             # input bounding box is checked to be correct.
             targets = self.prepare_llm_targets(batched_inputs, images)
-
             if self.task_switch['grounding']:
-                grounding_tokens = [x['grounding_query_embs'] for x in targets] # need to pad for more than one grounding token
-                grounding_tokens = nn.utils.rnn.pad_sequence(grounding_tokens)
-                extra['grounding_tokens'] = grounding_tokens
+                extra['grounding_tokens'] = torch.empty(0).cuda()
 
         features = self.backbone(images.tensor)
         outputs = self.sem_seg_head(features, extra=extra)
         
-        # CUVOLA: outputs
-        outputs['pred_cuvola_outputs']
+        # CuVOLA: outputs
+        outputs['pred_outputs_for_cuvola']
         
-        # CUVOLA: mask features
-        outputs['pred_cuvola_mask_features']
+        # CuVOLA: mask features
+        outputs['pred_mask_features_for_cuvola']
 
-        # CUVOLA: LLM
-        self.llm(outputs['pred_cuvola_outputs'])
+        # CuVOLA: LLM
+        self.llm(outputs['pred_outputs_for_cuvola'])
 
 
 
@@ -925,22 +922,14 @@ class GeneralizedXdecoder(nn.Module):
                     padded_masks[:, : grd_masks.shape[1], : grd_masks.shape[2]] = grd_masks
 
                 gtext = self.sem_seg_head.predictor.lang_encoder.get_text_token_embeddings(grd_texts, name='grounding', token=False, norm=False)
-
-                self.llm_tokenizer()
-                def get_text_token_embeddings(self, txts, name='default', token=False, norm=False):
-                    if not token:
-                        tokens = self.tokenizer(
-                            txts, padding='max_length', truncation=True, max_length=self.max_token_num, return_tensors='pt'
-                        )
-                        tokens = {key: value.cuda() for key, value in tokens.items()}
-                    else:
-                        tokens = txts
-                    token_emb, class_emb = self.forward_language_token((tokens['input_ids'], tokens['attention_mask']), norm=norm)
-                    ret = {"tokens": tokens,
-                            "token_emb": token_emb,
-                            "class_emb": class_emb,}
-                    setattr(self, '{}_token_embeddings'.format(name), ret)
-                    return ret
+                
+                llm_token = self.llm_tokenizer(
+                            grd_texts,
+                            return_tensors="pt",
+                            padding="longest",
+                            max_length=50,
+                            truncation=True,
+                            )
 
                 token_emb = gtext['token_emb']
                 tokens = gtext['tokens']
@@ -962,6 +951,8 @@ class GeneralizedXdecoder(nn.Module):
                 target_dict['grounding_class_embs'] = class_emb
                 target_dict['grounding_hash'] = grd_hash
                 target_dict['grounding_task'] = grd_task
+                target_dict['llm_input_ids'] = llm_token.input_ids
+                target_dict['llm_attn_masks'] = llm_token.attention_mask
 
             new_targets.append(target_dict)
         return new_targets

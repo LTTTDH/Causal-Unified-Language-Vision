@@ -5,15 +5,15 @@
 # Written by Xueyan Zou (xueyan@cs.wisc.edu)
 # --------------------------------------------------------
 
-# CUVOLA LLM
+# CuVOLA LLM
 LLM:
-  LOAD_LLM: false
-  BITS: 8
+  LOAD_LLM: true
+  BITS: 4
 
 # Define Test/Trainer/Saving
 PIPELINE: XDecoderPipeline
 TRAINER: xdecoder
-SAVE_DIR: '/mnt/ssd/lbk-cvpr/CUVOLA'
+SAVE_DIR: '/mnt/ssd/lbk-cvpr/CuVOLA'
 base_path: "./"
 
 # Resume Logistic
