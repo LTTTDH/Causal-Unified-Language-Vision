@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# VLP - Stage1 (Pretrained)
+GPU_DEVICE="0,1,2,3,4,5,6,7"
+length=${#GPU_DEVICE}
+port=$(($RANDOM%10000+30000))
+n_gpu=$(((length+1)/2))
+image_bath=4
+test_batch=4
+image_resol=1024
+
+CUDA_VISIBLE_DEVICES=$GPU_DEVICE mpirun -n $n_gpu python lbk_entry.py train \
+            --conf_files configs/xdecoder/focall_unicl_lang.yaml \
+            --overrides \
+            FP16 True \
+            PORT $port \
+            WANDB False \
+            MODEL.DECODER.CAPTIONING_WEIGHT 8 \
+            MODEL.DECODER.RETRIEVAL_WEIGHT 8 \
+            MODEL.DECODER.TOP_GROUNDING_LAYERS 6 \
+            COCO.INPUT.IMAGE_SIZE $image_resol \
+            COCO.TRAIN.BATCH_SIZE_TOTAL $((n_gpu * image_bath)) \
+            COCO.TRAIN.BATCH_SIZE_PER_GPU $image_bath \
+            COCO.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
+            REF.TEST.BATCH_SIZE_TOTAL $n_gpu \
+            ADE20K.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
+            WEIGHT True \
+            RESUME_FROM /mnt/ssd/lbk-cvpr/checkpoints/xdecoder_focall_last.pt
