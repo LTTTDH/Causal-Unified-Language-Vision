@@ -5,8 +5,8 @@ def main(args=None):
 
     from trainer import XDecoder_Trainer as Trainer
     trainer = Trainer(opt)
-    trainer.train()
-    # trainer.eval()
+    # trainer.train()
+    trainer.eval()
 
 if __name__ == "__main__":
     main()

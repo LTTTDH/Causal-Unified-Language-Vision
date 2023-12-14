@@ -7,7 +7,7 @@
 
 # CUVOLA LLM
 LLM:
-  LOAD_LLM: true
+  LOAD_LLM: false
   BITS: 8
 
 # Define Test/Trainer/Saving

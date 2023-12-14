@@ -44,7 +44,7 @@ class GeneralizedXdecoder(nn.Module):
         backbone: Backbone,
         sem_seg_head: nn.Module,
         llm,
-        llm_toknizer,
+        llm_tokenizer,
         mlp,
         criterion: nn.Module,
         losses: dict,
@@ -96,7 +96,7 @@ class GeneralizedXdecoder(nn.Module):
         self.backbone = backbone
         self.sem_seg_head = sem_seg_head
         self.llm = llm # CUVOLA
-        self.llm_tokenizer = llm_toknizer # CUVOLA
+        self.llm_tokenizer = llm_tokenizer # CUVOLA
         self.mlp = mlp # CUVOLA
         self.criterion = criterion
         self.losses = losses
@@ -175,7 +175,7 @@ class GeneralizedXdecoder(nn.Module):
             llm, llm_tokenizer, _ = prepare_llm(bits=bits)
             mlp = nn.Linear(dec_cfg['HIDDEN_DIM'], 4096)
         else:
-            llm, mlp = None, None
+            llm, llm_tokenizer, mlp = None, None, None
 
         # building criterion
         matcher = HungarianMatcher(
