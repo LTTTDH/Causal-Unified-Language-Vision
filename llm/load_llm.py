@@ -46,7 +46,7 @@ def prepare_llm(bits=16, double_quant=True, quant_type='nf4', ckpt="/mnt/ssd/lbk
     
     # PEFT for gradient checkpointing   
     if bits in [4, 8]: model.config.torch_dtype=torch.bfloat16
-    model = prepare_model_for_kbit_training(model)
+    # model = prepare_model_for_kbit_training(model)
 
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         ckpt,

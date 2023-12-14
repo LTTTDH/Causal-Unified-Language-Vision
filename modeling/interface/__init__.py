@@ -1,7 +1,4 @@
 from .xdecoder import *
-from .seem_v0 import *
-from .seem_v1 import *
-from .seem_demo import *
 from .build import *
 
 def build_decoder(config, *args, **kwargs):

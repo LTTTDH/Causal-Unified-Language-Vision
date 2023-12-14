@@ -221,6 +221,7 @@ class XDecoder(nn.Module):
         predictions_bbox = []
         predictions_caption = []
         predictions_captioning = []
+        predictions_cuvola_outputs = [] # CUVOLA
         
         self_tgt_mask = None
         if self.training and task == 'vlp' and self.task_switch['captioning']:
@@ -245,6 +246,9 @@ class XDecoder(nn.Module):
         else:
             self_tgt_mask = self.self_attn_mask[:,:self.num_queries,:self.num_queries].repeat(output.shape[1]*self.num_heads, 1, 1)
 
+        # CUVOLA
+        # attn_mask_visualize = (~self.self_attn_mask).permute(1,2,0).cpu().numpy()
+
         # prediction heads on learnable query features
         results = self.forward_prediction_heads(output, mask_features, attn_mask_target_size=size_list[0], task=task)
         attn_mask = results["attn_mask"]
@@ -252,7 +256,8 @@ class XDecoder(nn.Module):
         predictions_mask.append(results["outputs_mask"])
         predictions_bbox.append(results["outputs_bbox"])
         predictions_caption.append(results["outputs_caption"])
-        predictions_captioning.append(results["outputs_captionting"])
+        predictions_captioning.append(results["outputs_captionting"]) 
+        predictions_cuvola_outputs.append(results["cuvola_outputs"]) # CUVOLA
         
         for i in range(self.num_layers):
             level_index = i % self.num_feature_levels
@@ -295,6 +300,7 @@ class XDecoder(nn.Module):
             predictions_bbox.append(results["outputs_bbox"])
             predictions_caption.append(results["outputs_caption"])
             predictions_captioning.append(results["outputs_captionting"])
+            predictions_cuvola_outputs.append(results["cuvola_outputs"]) # CUVOLA
 
         assert len(predictions_class) == self.num_layers + 1
         if task == 'vlp':
@@ -308,6 +314,8 @@ class XDecoder(nn.Module):
                 'pred_masks': predictions_mask[-1],
                 'pred_boxes': predictions_bbox[-1],
                 'pred_captions': predictions_caption[-1],
+                'pred_cuvola_outputs': predictions_cuvola_outputs[-1],
+                'pred_cuvola_mask_features': mask_features,
                 'aux_outputs': self._set_aux_loss(
                     predictions_class if self.mask_classification else None, predictions_mask, predictions_bbox, predictions_caption
                 )
@@ -475,6 +483,8 @@ class XDecoder(nn.Module):
             "attn_mask": attn_mask,
             "outputs_caption": outputs_caption,
             "outputs_captionting": outputs_captionting,
+            "cuvola_outputs": output, # CUVOLA
+            "cuvola_mask_features": mask_features, # CUVOLA
         }
         return results
 
