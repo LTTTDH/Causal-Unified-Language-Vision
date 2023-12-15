@@ -10,7 +10,7 @@ test_batch=4
 image_resol=1024
 
 CUDA_VISIBLE_DEVICES=$GPU_DEVICE mpirun -n $n_gpu python entry.py train \
-            --conf_files configs/cuvola_step1.yaml \
+            --conf_files configs/culavo_step1.yaml \
             --overrides \
             FP16 True \
             PORT $port \

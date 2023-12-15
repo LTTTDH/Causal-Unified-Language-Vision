@@ -29,7 +29,7 @@ from ..language.loss import vl_similarity, image_text_contrastive_loss_queue
 from utils.prompt_engineering import prompt_engineering
 from utils.constants import COCO_PANOPTIC_CLASSES
 
-# CuVOLA
+# CuLAVO
 from llm.load_llm import prepare_llm
 
 st = LancasterStemmer()
@@ -95,9 +95,9 @@ class GeneralizedXdecoder(nn.Module):
         super().__init__()
         self.backbone = backbone
         self.sem_seg_head = sem_seg_head
-        self.llm = llm # CuVOLA
-        self.llm_tokenizer = llm_tokenizer # CuVOLA
-        self.mlp = mlp # CuVOLA
+        self.llm = llm # CuLAVO
+        self.llm_tokenizer = llm_tokenizer # CuLAVO
+        self.mlp = mlp # CuLAVO
         self.criterion = criterion
         self.losses = losses
         self.num_queries = num_queries
@@ -169,7 +169,7 @@ class GeneralizedXdecoder(nn.Module):
         lang_encoder = build_language_encoder(cfg)        
         sem_seg_head = build_xdecoder_head(cfg, backbone.output_shape(), lang_encoder, extra)
 
-        # CuVOLA
+        # CuLAVO
         if cfg['LLM']['LOAD_LLM']:
             bits = cfg['LLM']['BITS']
             llm, llm_tokenizer, _ = prepare_llm(bits=bits)
@@ -301,7 +301,7 @@ class GeneralizedXdecoder(nn.Module):
                     segments_info (list[dict]): Describe each segment in `panoptic_seg`.
                         Each dict contains keys "id", "category_id", "isthing".
         """
-        # CuVOLA
+        # CuLAVO
         self.connector_eval_and_freeze()
 
         if self.training:
@@ -356,7 +356,7 @@ class GeneralizedXdecoder(nn.Module):
         #     else:
         #         return self.evaluate(batched_inputs)
 
-    # CuVOLA
+    # CuLAVO
     def connector_eval_and_freeze(self):
         connector_model_list = [self.backbone, self.sem_seg_head]
         for model in connector_model_list:
@@ -382,14 +382,14 @@ class GeneralizedXdecoder(nn.Module):
         features = self.backbone(images.tensor)
         outputs = self.sem_seg_head(features, extra=extra)
         
-        # CuVOLA: outputs
-        outputs['pred_outputs_for_cuvola']
+        # CuLAVO: outputs
+        outputs['pred_outputs_for_culavo']
         
-        # CuVOLA: mask features
-        outputs['pred_mask_features_for_cuvola']
+        # CuLAVO: mask features
+        outputs['pred_mask_features_for_culavo']
 
-        # CuVOLA: LLM
-        self.llm(outputs['pred_outputs_for_cuvola'])
+        # CuLAVO: LLM
+        self.llm(outputs['pred_outputs_for_culavo'])
 
 
 

@@ -1,3 +1,3 @@
-# CuVOLA: Causal unified VisiOn LAnguage Model
+# CuLAVO: Causal unified LAnguage-VisiOn Model
 
-> This is Pytorch Implementation to construct Causal Unified Vision Language Model by leaveraging Large Language Model.
+> This is Pytorch Implementation to construct Causal unified LAnguage-VisiOn Model (CuLAVO) by leaveraging Multi-Modal Large Language Model.
