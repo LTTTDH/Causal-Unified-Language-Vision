@@ -29,7 +29,7 @@ from ..language.loss import vl_similarity, image_text_contrastive_loss_queue
 from utils.prompt_engineering import prompt_engineering
 from utils.constants import COCO_PANOPTIC_CLASSES
 
-# CuLAVO
+# CuLLAVO
 from llm.load_llm import prepare_llm
 
 st = LancasterStemmer()
@@ -95,9 +95,9 @@ class GeneralizedXdecoder(nn.Module):
         super().__init__()
         self.backbone = backbone
         self.sem_seg_head = sem_seg_head
-        self.llm = llm # CuLAVO
-        self.llm_tokenizer = llm_tokenizer # CuLAVO
-        self.mlp = mlp # CuLAVO
+        self.llm = llm # CuLLAVO
+        self.llm_tokenizer = llm_tokenizer # CuLLAVO
+        self.mlp = mlp # CuLLAVO
         self.criterion = criterion
         self.losses = losses
         self.num_queries = num_queries
@@ -169,7 +169,7 @@ class GeneralizedXdecoder(nn.Module):
         lang_encoder = build_language_encoder(cfg)        
         sem_seg_head = build_xdecoder_head(cfg, backbone.output_shape(), lang_encoder, extra)
 
-        # CuLAVO
+        # CuLLAVO
         if cfg['LLM']['LOAD_LLM']:
             bits = cfg['LLM']['BITS']
             llm, llm_tokenizer, _ = prepare_llm(bits=bits)
@@ -301,7 +301,7 @@ class GeneralizedXdecoder(nn.Module):
                     segments_info (list[dict]): Describe each segment in `panoptic_seg`.
                         Each dict contains keys "id", "category_id", "isthing".
         """
-        # CuLAVO
+        # CuLLAVO
         self.connector_eval_and_freeze()
 
         if self.training:
@@ -356,7 +356,7 @@ class GeneralizedXdecoder(nn.Module):
         #     else:
         #         return self.evaluate(batched_inputs)
 
-    # CuLAVO
+    # CuLLAVO
     def connector_eval_and_freeze(self):
         connector_model_list = [self.backbone, self.sem_seg_head]
         for model in connector_model_list:
@@ -382,14 +382,14 @@ class GeneralizedXdecoder(nn.Module):
         features = self.backbone(images.tensor)
         outputs = self.sem_seg_head(features, extra=extra)
         
-        # CuLAVO: outputs
-        outputs['pred_outputs_for_culavo']
+        # CuLLAVO: outputs
+        outputs['pred_outputs_for_cullavo']
         
-        # CuLAVO: mask features
-        outputs['pred_mask_features_for_culavo']
+        # CuLLAVO: mask features
+        outputs['pred_mask_features_for_cullavo']
 
-        # CuLAVO: LLM
-        self.llm(outputs['pred_outputs_for_culavo'])
+        # CuLLAVO: LLM
+        self.llm(outputs['pred_outputs_for_cullavo'])
 
 
 

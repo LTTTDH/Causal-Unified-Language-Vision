@@ -221,7 +221,7 @@ class XDecoder(nn.Module):
         predictions_bbox = []
         predictions_caption = []
         predictions_captioning = []
-        predictions_outputs_for_culavo = [] # CuLAVO
+        predictions_outputs_for_cullavo = [] # CuLLAVO
         
         self_tgt_mask = None
         if self.training and task == 'vlp' and self.task_switch['captioning']:
@@ -246,7 +246,7 @@ class XDecoder(nn.Module):
         else:
             self_tgt_mask = self.self_attn_mask[:,:self.num_queries,:self.num_queries].repeat(output.shape[1]*self.num_heads, 1, 1)
 
-        # CuLAVO
+        # CuLLAVO
         # attn_mask_visualize = (~self.self_attn_mask).permute(1,2,0).cpu().numpy()
 
         # prediction heads on learnable query features
@@ -257,7 +257,7 @@ class XDecoder(nn.Module):
         predictions_bbox.append(results["outputs_bbox"])
         predictions_caption.append(results["outputs_caption"])
         predictions_captioning.append(results["outputs_captionting"]) 
-        predictions_outputs_for_culavo.append(output) # CuLAVO
+        predictions_outputs_for_cullavo.append(output) # CuLLAVO
         
         for i in range(self.num_layers):
             level_index = i % self.num_feature_levels
@@ -300,7 +300,7 @@ class XDecoder(nn.Module):
             predictions_bbox.append(results["outputs_bbox"])
             predictions_caption.append(results["outputs_caption"])
             predictions_captioning.append(results["outputs_captionting"])
-            predictions_outputs_for_culavo.append(output) # CuLAVO
+            predictions_outputs_for_cullavo.append(output) # CuLLAVO
 
         assert len(predictions_class) == self.num_layers + 1
         if task == 'vlp':
@@ -314,8 +314,8 @@ class XDecoder(nn.Module):
                 'pred_masks': predictions_mask[-1],
                 'pred_boxes': predictions_bbox[-1],
                 'pred_captions': predictions_caption[-1],
-                'pred_outputs_for_culavo': predictions_outputs_for_culavo[-1],
-                'pred_mask_features_for_culavo': mask_features,
+                'pred_outputs_for_cullavo': predictions_outputs_for_cullavo[-1],
+                'pred_mask_features_for_cullavo': mask_features,
                 'aux_outputs': self._set_aux_loss(
                     predictions_class if self.mask_classification else None, predictions_mask, predictions_bbox, predictions_caption
                 )

@@ -36,7 +36,7 @@ def align_and_update_state_dicts(model_state_dict, ckpt_state_dict):
     unmatched_log = []
     unloaded_log = []
 
-    filtered_model_keys = list(filter(lambda x: not x.startswith('llm.'), model_keys)) # CuLAVO
+    filtered_model_keys = list(filter(lambda x: not x.startswith('llm.'), model_keys)) # CuLLAVO
     for model_key in filtered_model_keys:
         model_weight = model_state_dict[model_key]
         if model_key in ckpt_keys:
