@@ -45,7 +45,9 @@ class GeneralizedXdecoder(nn.Module):
         sem_seg_head: nn.Module,
         llm,
         llm_tokenizer,
-        mlp,
+        mlp_img_feat,
+        mlp_gen_prop,
+        mlp_ref_prop,
         criterion: nn.Module,
         losses: dict,
         num_queries: int,
@@ -97,7 +99,9 @@ class GeneralizedXdecoder(nn.Module):
         self.sem_seg_head = sem_seg_head
         self.llm = llm # CuLLAVO
         self.llm_tokenizer = llm_tokenizer # CuLLAVO
-        self.mlp = mlp # CuLLAVO
+        self.mlp_img_feat = mlp_img_feat # CuLLAVO
+        self.mlp_gen_prop = mlp_gen_prop # CuLLAVO
+        self.mlp_ref_prop = mlp_ref_prop # CuLLAVO
         self.criterion = criterion
         self.losses = losses
         self.num_queries = num_queries
@@ -173,9 +177,11 @@ class GeneralizedXdecoder(nn.Module):
         if cfg['LLM']['LOAD_LLM']:
             bits = cfg['LLM']['BITS']
             llm, llm_tokenizer, _ = prepare_llm(bits=bits)
-            mlp = nn.Linear(dec_cfg['HIDDEN_DIM'], 4096)
+            mlp_img_feat = nn.Sequential(nn.Linear(1536, 4096), nn.Linear(4096, 4096), nn.Linear(4096, 4096))
+            mlp_gen_prop = nn.Sequential(nn.Linear(512, 4096), nn.Linear(4096, 4096), nn.Linear(4096, 4096))
+            mlp_ref_prop = nn.Sequential(nn.Linear(512, 4096), nn.Linear(4096, 4096), nn.Linear(4096, 4096))
         else:
-            llm, llm_tokenizer, mlp = None, None, None
+            llm, llm_tokenizer, mlp_img_feat, mlp_gen_prop, mlp_ref_prop = None, None, None
 
         # building criterion
         matcher = HungarianMatcher(
@@ -243,7 +249,9 @@ class GeneralizedXdecoder(nn.Module):
             "sem_seg_head": sem_seg_head,
             "llm": llm,
             "llm_tokenizer": llm_tokenizer,
-            "mlp": mlp,
+            "mlp_img_feat": mlp_img_feat,
+            "mlp_gen_prop": mlp_gen_prop,
+            "mlp_ref_prop": mlp_ref_prop,
             "criterion": criterion,
             "losses": losses,
             "num_queries": dec_cfg['NUM_OBJECT_QUERIES'],
@@ -362,7 +370,7 @@ class GeneralizedXdecoder(nn.Module):
         for model in connector_model_list:
             model.eval()
             for param in model.parameters():
-                param.required_grad = False
+                param.requires_grad = False
 
     def forward_seg_with_llm(self, batched_inputs):
         images = [x["image"].to(self.device) for x in batched_inputs]
@@ -377,25 +385,35 @@ class GeneralizedXdecoder(nn.Module):
             # input bounding box is checked to be correct.
             targets = self.prepare_llm_targets(batched_inputs, images)
             if self.task_switch['grounding']:
-                extra['grounding_tokens'] = torch.empty(0).cuda()
+                grounding_tokens = [x['grounding_query_embs'] for x in targets] # need to pad for more than one grounding token
+                grounding_tokens = nn.utils.rnn.pad_sequence(grounding_tokens)
+                extra['grounding_tokens'] = grounding_tokens
+
+        # target_dict['grounding_masks'] = padded_masks
+        # target_dict['grounding_query_embs'] = query_emb
+        # target_dict['grounding_class_embs'] = class_emb
+        # target_dict['grounding_hash'] = grd_hash
+        # target_dict['grounding_task'] = grd_task
+        # target_dict['llm_input_ids'] = llm_token.input_ids
+        # target_dict['llm_attn_masks'] = llm_token.attention_mask
+
 
         features = self.backbone(images.tensor)
         outputs = self.sem_seg_head(features, extra=extra)
+
+        # CuLLAVO: output splits
+        gen_seg, ref_seg = outputs['pred_outputs_for_cullavo'][:self.num_queries-1], outputs['pred_outputs_for_cullavo'][self.num_queries:]
         
-        # CuLLAVO: outputs
-        outputs['pred_outputs_for_cullavo']
-        
+        # llm preparation
+        hel = self.llm(img_description=[" ".join(x['captions']) for x in batched_inputs],
+                 ref_description=[" ".join(x['groundings']['texts']) for x in batched_inputs],
+                 img_features=self.mlp_img_feat(features['res5'].flatten(2,3).permute(0, 2, 1).contiguous()),
+                 gen_proposals=self.mlp_gen_prop(gen_seg.transpose(0, 1)),
+                 ref_proposals=self.mlp_ref_prop(ref_seg.transpose(0, 1)),
+                 tokenizer=self.llm_tokenizer)
+
         # CuLLAVO: mask features
         outputs['pred_mask_features_for_cullavo']
-
-        # CuLLAVO: LLM
-        self.llm(outputs['pred_outputs_for_cullavo'])
-
-
-
-
-
-
 
 
         _outputs = {}

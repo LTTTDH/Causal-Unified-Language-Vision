@@ -232,7 +232,7 @@ class XDecoder(nn.Module):
             caping_lang_embed += self.pos_embed_caping.weight.unsqueeze(1).repeat(1, bs, 1)
             query_embed = torch.cat((query_embed, caping_lang_embed), dim=0) # may not add at the beginning.
             self_tgt_mask = self.self_attn_mask.repeat(output.shape[1]*self.num_heads, 1, 1)
-        elif (((self.training and task == 'seg') or (task == 'grounding_eval')) and self.task_switch['grounding']):
+        elif (((task == 'seg') or (task == 'grounding_eval')) and self.task_switch['grounding']):
             self_tgt_mask = self.self_attn_mask[:,:self.num_queries,:self.num_queries].repeat(output.shape[1]*self.num_heads, 1, 1)
             grounding_tokens = extra['grounding_tokens']
             _grounding_tokens = grounding_tokens.detach().clone()
@@ -273,7 +273,7 @@ class XDecoder(nn.Module):
                 pos=pos[level_index], query_pos=query_embed
             )
 
-            if (((self.training and task == 'seg') or (task == 'grounding_eval')) and self.task_switch['grounding']):
+            if (((task == 'seg') or (task == 'grounding_eval')) and self.task_switch['grounding']):
                 output = torch.cat((output, _grounding_tokens), dim=0)
                 query_embed = torch.cat((query_embed, grounding_tokens), dim=0)
 
@@ -288,7 +288,7 @@ class XDecoder(nn.Module):
                 output
             )
 
-            if ((self.training and task == 'seg') or (task == 'grounding_eval')) and self.task_switch['grounding']:
+            if ((task == 'seg') or (task == 'grounding_eval')) and self.task_switch['grounding']:
                 _grounding_tokens = output[-len(_grounding_tokens):]
                 output = output[:-len(_grounding_tokens)]
                 query_embed = query_embed[:-len(_grounding_tokens)]
@@ -438,7 +438,7 @@ class XDecoder(nn.Module):
         sim = (cls_token @ obj_token.transpose(1,2)).softmax(-1)[:,0,:,None] # TODO include class token.
         cls_token = (sim * decoder_output[:,:self.num_queries-1]).sum(dim=1, keepdim=True)
 
-        if (((self.training and task == 'seg') or (task == 'grounding_eval')) and self.task_switch['grounding']):
+        if (((task == 'seg') or (task == 'grounding_eval')) and self.task_switch['grounding']):
             decoder_output = torch.cat((decoder_output[:,:self.num_queries-1], cls_token, decoder_output[:,self.num_queries:2*self.num_queries-1]), dim=1)
         else:
             decoder_output = torch.cat((decoder_output[:,:self.num_queries-1], cls_token), dim=1)
@@ -446,7 +446,7 @@ class XDecoder(nn.Module):
         # compute class, mask and bbox.
         class_embed = decoder_output @ self.class_embed
         # HACK do not compute similarity if mask is not on
-        outputs_class = self.lang_encoder.compute_similarity(class_embed, fake=(((not self.task_switch['mask']) and self.training)))
+        outputs_class = self.lang_encoder.compute_similarity(class_embed, fake=(((not self.task_switch['mask']))))
 
         if self.task_switch['mask']:
             mask_embed = self.mask_embed(decoder_output)
