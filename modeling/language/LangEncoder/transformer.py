@@ -129,12 +129,12 @@ class Transformer(nn.Module):
 
     def _init_weights(self, m):
         if isinstance(m, (nn.Linear, nn.Conv2d)):
-            if is_main_process():
-                logger.info('=> init weight of Linear/Conv2d from trunc norm')
+            # if is_main_process():
+            #     logger.info('=> init weight of Linear/Conv2d from trunc norm')
             trunc_normal_(m.weight, std=0.02)
             if m.bias is not None:
-                if is_main_process():
-                    logger.info('=> init bias of Linear/Conv2d to zeros')
+                # if is_main_process():
+                #     logger.info('=> init bias of Linear/Conv2d to zeros')
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, (nn.LayerNorm, nn.BatchNorm2d)):
             nn.init.constant_(m.bias, 0)
@@ -156,8 +156,8 @@ class Transformer(nn.Module):
                     or pretrained_layers[0] == '*'
                 )
                 if need_init:
-                    if verbose:
-                        logger.info(f'=> init {k} from {pretrained}')
+                    # if verbose:
+                    #     logger.info(f'=> init {k} from {pretrained}')
 
                     if 'positional_embedding' in k and v.size() != model_dict[k].size():
                         positional_embedding_pretrained = v
@@ -165,13 +165,14 @@ class Transformer(nn.Module):
                         L1, nH1 = positional_embedding_pretrained.size()
                         L2, nH2 = positional_embedding_current.size()
                         if nH1 != nH2:
-                            logger.info(f"Error in loading {k}, passing")
+                            # logger.info(f"Error in loading {k}, passing")
+                            pass
                         else:
                             if L1 != L2:
-                                logger.info(
-                                    '=> load_pretrained: resized variant: {} to {}'
-                                        .format((L1, nH1), (L2, nH2))
-                                )
+                                # logger.info(
+                                #     '=> load_pretrained: resized variant: {} to {}'
+                                #         .format((L1, nH1), (L2, nH2))
+                                # )
 
                                 posemb = positional_embedding_pretrained.float()
                                 posemb_grid = posemb.unsqueeze(dim=0).permute(0, 2, 1)

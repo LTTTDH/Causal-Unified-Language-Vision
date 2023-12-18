@@ -44,8 +44,8 @@ class XDecoderPipeline:
         model = build_model(self._opt)
         model.train()
 
-        if is_main_process():
-            logger.info(model)
+        # if is_main_process():
+        #     logger.info(model)
 
         raw_models = {model_name: BaseModel(self._opt, model)}
         return raw_models
@@ -69,7 +69,7 @@ class XDecoderPipeline:
             if not hasattr(self, 'train_loader'):
                 dataloader = build_train_dataloader(self._opt)
                 self.train_loader = dataloader
-                logger.info(f'num of train samples: {len(dataloader)}')
+                # logger.info(f'num of train samples: {len(dataloader)}')
             else:
                 dataloader = self.train_loader
                 
@@ -109,7 +109,6 @@ class XDecoderPipeline:
     def evaluate_model(
         self,
         trainer: DefaultTrainer,
-        save_folder,
     ) -> Tuple[Dict, Dict[str, float], bool]:
 
         model = trainer.raw_models['default'].eval()

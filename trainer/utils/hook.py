@@ -53,9 +53,9 @@ def add_hook():
     global _orig_except_hook
 
     if _orig_except_hook is not None:
-        logger.warning("GlobalExceptHook.add_hook() seems to be called multiple times. Ignoring.")
+        # logger.warning("GlobalExceptHook.add_hook() seems to be called multiple times. Ignoring.")
         return
 
-    logger.info("Adding global except hook for the distributed job to shutdown MPI if unhandled exception is raised on some of the ranks.")
+    # logger.info("Adding global except hook for the distributed job to shutdown MPI if unhandled exception is raised on some of the ranks.")
     _orig_except_hook = sys.excepthook
     sys.excepthook = _global_except_hook

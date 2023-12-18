@@ -73,21 +73,9 @@ class UtilsTrainer(DistributedTrainer):
             self.raw_models[module_name] = self.raw_models[module_name].from_pretrained(load_path)
             self.raw_models[module_name].to(self.opt['device'])
 
-    def save_checkpoint(self, tag):
-        tag = str(tag).zfill(8)
-        logger.warning('Saving checkpoint...')
-
-        resume_epoch_idx = self.train_params['current_epoch_idx']
-        resume_batch_idx = self.train_params['current_batch_idx'] + 1
-
-        if resume_batch_idx == self.train_params['updates_per_epoch']:
-            self.train_params['start_batch_idx'] = 0
-            self.train_params['start_epoch_idx'] = resume_epoch_idx + 1
-        else:
-            self.train_params['start_batch_idx'] = resume_batch_idx
-            self.train_params['start_epoch_idx'] = resume_epoch_idx
+    def save_checkpoint(self, epoch):
         
-        save_dir = os.path.join(self.save_folder, tag)
+        save_dir = self.save_folder
 
         if self.opt['world_size'] > 1:
             torch.distributed.barrier()
@@ -102,69 +90,103 @@ class UtilsTrainer(DistributedTrainer):
             os.makedirs(save_dir, exist_ok=True)
 
         if self.opt['rank'] == 0:
-            if self.opt['FP16']:
-                amp_state = self.grad_scaler.state_dict()
-            else:
-                amp_state = None
             for module_name in self.model_names:
                 module_save_dir = os.path.join(save_dir, module_name)
-                os.makedirs(module_save_dir, exist_ok=True)
-                save_path = os.path.join(module_save_dir, 'module_training_states.pt')
-                state = {'module': self.models[module_name].state_dict(),
-                            'optimizer': self.optimizers[module_name].state_dict(),
-                            'lr_scheduler': self.lr_schedulers[module_name].state_dict(),
-                            'amp_state': amp_state,}
-                torch.save(state, save_path)
+                self.raw_models[module_name].save_pretrained(module_save_dir, epoch)
+            print(f'Saved!: {module_save_dir}')
 
-        if self.opt['rank'] == 0:
-            save_path = os.path.join(save_dir, 'trainer_states.pt')
-            trainer_state = {'train_loss': self.train_loss,
-                                'train_params': self.train_params,}
-            torch.save(trainer_state, save_path)
+    # def save_checkpoint(self, tag):
+    #     tag = str(tag).zfill(8)
+    #     logger.warning('Saving checkpoint...')
 
-        num_retries = 0
-        while num_retries < 3:
-            try:
-                random_state_path = os.path.join(save_dir, f"random_state_rank_{self.opt['rank']:04d}")
-                random_state = {'random': random.getstate(),
-                                'numpy_random': np.random.get_state(),
-                                'torch_random': torch.get_rng_state(),
-                                'torch_cuda_random': torch.cuda.get_rng_state(device=self.opt['device']) if self.opt['CUDA'] else None
-                                }
-                torch.save(random_state, random_state_path)
-                num_retries = 3
-            except Exception as err:
-                num_retries += 1
-                logger.warning(err)
-                logger.warning("Failed to save checkpoint at retry {}, waiting for 30s to retry.".format(num_retries))
-                time.sleep(30)
+    #     resume_epoch_idx = self.train_params['current_epoch_idx']
+    #     resume_batch_idx = self.train_params['current_batch_idx'] + 1
 
-        if self.opt['rank'] == 0:
-            for module_name in self.model_names:
-                module_save_dir = os.path.join(save_dir, module_name)
-                self.raw_models[module_name].save_pretrained(module_save_dir)
+    #     if resume_batch_idx == self.train_params['updates_per_epoch']:
+    #         self.train_params['start_batch_idx'] = 0
+    #         self.train_params['start_epoch_idx'] = resume_epoch_idx + 1
+    #     else:
+    #         self.train_params['start_batch_idx'] = resume_batch_idx
+    #         self.train_params['start_epoch_idx'] = resume_epoch_idx
+        
+    #     save_dir = os.path.join(self.save_folder, tag)
 
-        if self.opt['rank'] == 0:
-            # save the latest checkpoint location to json file
-            checkpoint_location = {'checkpoint_tag': tag,
-                                    'checkpoint_path': os.path.relpath(self.save_folder, start=self.opt['SAVE_DIR'])}
-            with open(os.path.join(self.opt['SAVE_DIR'], f"resume_checkpoint.json"), 'w', encoding='utf-8') as f:
-                json.dump(checkpoint_location, f, cls=JSONEncoder)
+    #     if self.opt['world_size'] > 1:
+    #         torch.distributed.barrier()
 
-        logger.warning(f'Finished saving checkpoint and model to {save_dir}.')
+    #     if self.opt['rank'] == 0:
+    #         os.makedirs(self.save_folder, exist_ok=True)
+
+    #     if self.opt['world_size'] > 1:
+    #         torch.distributed.barrier()
+
+    #     if self.opt['rank'] == 0:
+    #         os.makedirs(save_dir, exist_ok=True)
+
+    #     if self.opt['rank'] == 0:
+    #         if self.opt['FP16']:
+    #             amp_state = self.grad_scaler.state_dict()
+    #         else:
+    #             amp_state = None
+    #         for module_name in self.model_names:
+    #             module_save_dir = os.path.join(save_dir, module_name)
+    #             os.makedirs(module_save_dir, exist_ok=True)
+    #             save_path = os.path.join(module_save_dir, 'module_training_states.pt')
+    #             state = {'module': self.models[module_name].state_dict(),
+    #                         'optimizer': self.optimizers[module_name].state_dict(),
+    #                         'lr_scheduler': self.lr_schedulers[module_name].state_dict(),
+    #                         'amp_state': amp_state,}
+    #             torch.save(state, save_path)
+
+    #     if self.opt['rank'] == 0:
+    #         save_path = os.path.join(save_dir, 'trainer_states.pt')
+    #         trainer_state = {'train_loss': self.train_loss,
+    #                             'train_params': self.train_params,}
+    #         torch.save(trainer_state, save_path)
+
+    #     num_retries = 0
+    #     while num_retries < 3:
+    #         try:
+    #             random_state_path = os.path.join(save_dir, f"random_state_rank_{self.opt['rank']:04d}")
+    #             random_state = {'random': random.getstate(),
+    #                             'numpy_random': np.random.get_state(),
+    #                             'torch_random': torch.get_rng_state(),
+    #                             'torch_cuda_random': torch.cuda.get_rng_state(device=self.opt['device']) if self.opt['CUDA'] else None
+    #                             }
+    #             torch.save(random_state, random_state_path)
+    #             num_retries = 3
+    #         except Exception as err:
+    #             num_retries += 1
+    #             logger.warning(err)
+    #             logger.warning("Failed to save checkpoint at retry {}, waiting for 30s to retry.".format(num_retries))
+    #             time.sleep(30)
+
+    #     if self.opt['rank'] == 0:
+    #         for module_name in self.model_names:
+    #             module_save_dir = os.path.join(save_dir, module_name)
+    #             self.raw_models[module_name].save_pretrained(module_save_dir)
+
+    #     if self.opt['rank'] == 0:
+    #         # save the latest checkpoint location to json file
+    #         checkpoint_location = {'checkpoint_tag': tag,
+    #                                 'checkpoint_path': os.path.relpath(self.save_folder, start=self.opt['SAVE_DIR'])}
+    #         with open(os.path.join(self.opt['SAVE_DIR'], f"resume_checkpoint.json"), 'w', encoding='utf-8') as f:
+    #             json.dump(checkpoint_location, f, cls=JSONEncoder)
+
+    #     logger.warning(f'Finished saving checkpoint and model to {save_dir}.')
 
     def load_weight(self, checkpoint_path=None, must_exist=False):
         self.load_model(checkpoint_path)
-        logger.warning(f'Load weights from {checkpoint_path}...')
+        # logger.warning(f'Load weights from {checkpoint_path}...')
 
     def load_checkpoint(self, checkpoint_path=None, must_exist=False):
-        logger.warning(f'Resuming checkpoint from {checkpoint_path}...')
+        # logger.warning(f'Resuming checkpoint from {checkpoint_path}...')
 
         for model_name in self.model_names:
             model_load_path = os.path.join(checkpoint_path, model_name, 'module_training_states.pt')
             state = torch.load(model_load_path, map_location=self.opt['device'])
             
-            logger.warning(f'HACK to strip module from model state dict on single gpu debugging!')
+            # logger.warning(f'HACK to strip module from model state dict on single gpu debugging!')
             ckpt = state['module']
             if get_world_size() <= 1:
                 ckpt = {key.replace('module.',''):ckpt[key] for key in ckpt.keys()}

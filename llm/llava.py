@@ -24,6 +24,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, \
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from .llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
+import torch.nn.functional as F
 
 
 class LlavaConfig(LlamaConfig):
@@ -58,43 +59,59 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         return tok_embed.squeeze(0), tok_attn_mask.squeeze(0)
 
     def forward(
-        self,
+        self,        
         img_description=None,
         ref_description=None,
         img_features=None,
         gen_proposals=None,
         ref_proposals=None,
         tokenizer=None,
+        *,
+        input_ids=None,
+        attention_mask=None,
+        inputs_embeds=None,
+        labels=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
 
-        image_prompt_pre = "You should answer concretely to help humans acquire significant performance to everything. This is an image information representing visual understanding: "
+        image_prompt_pre = "This is an image information representing visual understanding: (A):"
         image_prompt_pre_embed, image_prompt_pre_attn_mask = self.propmt_engineering(image_prompt_pre, tokenizer)
     
         image_prompt_post = f" where its short description is "
         image_prompt_post_embed, image_prompt_post_attn_mask = self.propmt_engineering(image_prompt_post, tokenizer)
 
-        seg_prompt = ", and this is mask proposals representing many key-focus for general segmentation: panoptic/instance/semantic segmentation in the image: "
+        seg_prompt = ", and this is mask proposals representing many key-focus for general segmentation: "
         seg_prompt_embed, seg_prompt_attn_mask = self.propmt_engineering(seg_prompt, tokenizer)
 
-        ref_propmt_pre = f" One more, if a user wants to segment "
+        ref_propmt_pre = f". One more, if a user wants to segment <"
         ref_propmt_pre_embed, ref_prompt_pre_attn_mask = self.propmt_engineering(ref_propmt_pre, tokenizer)
 
-        ref_prompt_post = ", and this will be referring mask proposals representing specific-focus area that a user wants to segment: "
+        ref_prompt_post = ">, and this will be referring mask proposals representing specific-focus area that a user wants to segment: (A):"
         ref_propmt_post_embed, ref_propmt_post_attn_mask = self.propmt_engineering(ref_prompt_post, tokenizer)
 
         full_text = []
         full_label = []
         full_attn = []
+        start_gen_prop_idx_list = []
+        start_ref_prop_idx_list = []
         for img_des, ref_des, img_feat, gen_prop, ref_prop in zip(img_description, ref_description, img_features, gen_proposals, ref_proposals):
-            text = torch.cat([image_prompt_pre_embed, img_feat], dim=0)
-            label = torch.cat([image_prompt_pre_attn_mask * (-100), torch.ones(img_feat.shape[0])* (-100)], dim=0)
-            attn = torch.cat([image_prompt_pre_attn_mask, torch.ones(img_feat.shape[0])], dim=0)            
+            tok = tokenizer('<s>', return_tensors='pt')
+            text = self.model.embed_tokens(tok['input_ids'][:, 1:]).squeeze(0)
+            label = tok['attention_mask'][:, 1:].squeeze(0) * (-100)
+            attn = tok['attention_mask'][:, 1:].squeeze(0)
+            
+            text = torch.cat([text, image_prompt_pre_embed, img_feat], dim=0)
+            label = torch.cat([label, image_prompt_pre_attn_mask * (-100), torch.ones(img_feat.shape[0])* (-100)], dim=0)
+            attn = torch.cat([attn, image_prompt_pre_attn_mask, torch.ones(img_feat.shape[0])], dim=0)            
             
             tok = tokenizer(img_des, return_tensors="pt")
             text = torch.cat([text, image_prompt_post_embed, self.model.embed_tokens(tok['input_ids'][:, 1:]).squeeze(0)], dim=0)
             label = torch.cat([label, image_prompt_post_attn_mask * (-100), tok['attention_mask'][:, 1:].squeeze(0) * (-100)], dim=0)
             attn = torch.cat([attn, image_prompt_post_attn_mask, tok['attention_mask'][:, 1:].squeeze(0)], dim=0)
             
+            start_gen_prop_idx_list.append(len(text) + len(seg_prompt_embed))
             text = torch.cat([text, seg_prompt_embed, gen_prop], dim=0)
             label = torch.cat([label, seg_prompt_attn_mask * (-100), torch.ones(gen_prop.shape[0])* (-100)], dim=0)
             attn = torch.cat([attn, seg_prompt_attn_mask, torch.ones(gen_prop.shape[0])], dim=0)
@@ -104,19 +121,60 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
             label = torch.cat([label, ref_prompt_pre_attn_mask * (-100), tok['attention_mask'][:, 1:].squeeze(0) * (-100)], dim=0)
             attn = torch.cat([attn, ref_prompt_pre_attn_mask, tok['attention_mask'][:, 1:].squeeze(0)], dim=0)
 
+            start_ref_prop_idx_list.append(len(text) + len(ref_propmt_post_embed))
             text = torch.cat([text, ref_propmt_post_embed, ref_prop], dim=0)
             label = torch.cat([label, ref_propmt_post_attn_mask * (-100), torch.ones(ref_prop.shape[0])* (-100)], dim=0)
             attn = torch.cat([attn, ref_propmt_post_attn_mask, torch.ones(ref_prop.shape[0])], dim=0)
+
+            tok = tokenizer('</s>', return_tensors='pt')
+            text = torch.cat([text, self.model.embed_tokens(tok['input_ids'][:, 1:]).squeeze(0)], dim=0)
+            label = torch.cat([label, tok['attention_mask'][:, 1:].squeeze(0) * (-100)], dim=0)
+            attn = torch.cat([attn, tok['attention_mask'][:, 1:].squeeze(0)], dim=0)
 
             full_text.append(text)
             full_label.append(label)
             full_attn.append(attn)
 
-        return super().forward(
-            attention_mask=torch.nn.utils.rnn.pad_sequence(full_attn, padding_value=0),
-            inputs_embeds=torch.nn.utils.rnn.pad_sequence(full_text, padding_value=0),
-            labels=torch.nn.utils.rnn.pad_sequence(full_label, padding_value=-100),
-        )
+
+        attention_mask=torch.nn.utils.rnn.pad_sequence(full_attn, batch_first=True).bool()
+        inputs_embeds=torch.nn.utils.rnn.pad_sequence(full_text, batch_first=True)
+        # labels=torch.nn.utils.rnn.pad_sequence(full_label, batch_first=True, padding_value=-100)
+        labels = None
+
+
+        # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+        with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+            outputs = self.model(
+                attention_mask=attention_mask,
+                inputs_embeds=inputs_embeds,
+            )
+
+            hidden_states = outputs[0]
+            logits = self.lm_head(hidden_states)
+        logits = logits.float()
+
+        loss = None
+        if labels is not None:
+            # Shift so that tokens < n predict n
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            # Flatten the tokens
+            shift_logits = shift_logits.view(-1, self.config.vocab_size)
+            shift_labels = shift_labels.view(-1)
+            # Enable model parallelism
+            shift_labels = shift_labels.to(shift_logits.device)
+            loss = F.cross_entropy(shift_logits, shift_labels)
+        
+        gen_tensor_list = []
+        ref_tensor_list = []
+        for idx, (start_gen_id, start_ref_id) in enumerate(zip(start_gen_prop_idx_list, start_ref_prop_idx_list)):
+            gen_tensor_list.append(hidden_states[idx][start_gen_id: start_gen_id+200].unsqueeze(0))
+            ref_tensor_list.append(hidden_states[idx][start_ref_id: start_ref_id+200].unsqueeze(0))
+        gen_tensor = torch.cat(gen_tensor_list, dim=0)
+        ref_tensor = torch.cat(ref_tensor_list, dim=0)
+
+        return loss, gen_tensor, ref_tensor 
+
 
     def prepare_inputs_for_generation(
         self, input_ids, past_key_values=None, attention_mask=None, inputs_embeds=None, **kwargs

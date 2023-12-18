@@ -114,8 +114,8 @@ class XDecoder_Trainer(DefaultTrainer):
                     for key, lr_mul in lr_multiplier.items():
                         if key in "{}.{}".format(module_name, module_param_name):
                             hyperparams["lr"] = hyperparams["lr"] * lr_mul
-                            if is_main_process():
-                                logger.info("Modify Learning rate of {}: {}".format("{}.{}".format(module_name, module_param_name), lr_mul))
+                            # if is_main_process():
+                            #     logger.info("Modify Learning rate of {}: {}".format("{}.{}".format(module_name, module_param_name), lr_mul))
 
                     if (
                         "relative_position_bias_table" in module_param_name
@@ -165,7 +165,7 @@ class XDecoder_Trainer(DefaultTrainer):
         num_epoch = self.opt['SOLVER']['MAX_NUM_EPOCHS']
         cfg_solver['MAX_ITER'] = num_epoch * self.train_params['updates_per_epoch']
         cfg_solver['STEPS'] = [int(x*cfg_solver['MAX_ITER']) for x in cfg_solver['STEPS']]
-        logger.info(f"Calculate MAX_ITER @ {cfg_solver['MAX_ITER']} and STEPS @ {cfg_solver['STEPS']}")
+        # logger.info(f"Calculate MAX_ITER @ {cfg_solver['MAX_ITER']} and STEPS @ {cfg_solver['STEPS']}")
 
         for module_name in self.model_names:
             scheduler_cfg = CfgNode({'SOLVER': cfg_solver})
@@ -178,5 +178,5 @@ class XDecoder_Trainer(DefaultTrainer):
                 num_params += param.numel()
                 if param.requires_grad:
                     num_trainable_params += param.numel()
-            logger.info(f"Total number of parameters in {module_name} module (on each GPU): {num_params}")
-            logger.info(f"Number of trainable parameters in {module_name} module (on each GPU): {num_trainable_params}")
+            # logger.info(f"Total number of parameters in {module_name} module (on each GPU): {num_params}")
+            # logger.info(f"Number of trainable parameters in {module_name} module (on each GPU): {num_trainable_params}")

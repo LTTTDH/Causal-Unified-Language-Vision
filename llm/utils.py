@@ -9,7 +9,6 @@ from torch.utils.data import Dataset
 from .conversation import * 
 from dataclasses import dataclass, field
 from typing import Union, Optional, Dict, Sequence
-from .bk_hf_parser import BK_HfArgumentParser
 
 CONTROLLER_HEART_BEAT_EXPIRATION = 30
 WORKER_HEART_BEAT_INTERVAL = 15

@@ -34,11 +34,11 @@ class DistributedTrainer:
         # set up device
         if not self.opt['CUDA']:
             self.opt['device'] = torch.device("cpu")
-            logger.info("Using CPU")
+            # logger.info("Using CPU")
         else:
             torch.cuda.set_device(self.opt['local_rank'])
             self.opt['device'] = torch.device("cuda", self.opt['local_rank'])
-            logger.info("Using CUDA")
+            # logger.info("Using CUDA")
 
         # init distributed training
         # adapter.log_info()
@@ -59,9 +59,9 @@ class DistributedTrainer:
 
         # ddp: log stats and update learning rate
         self.grad_acc_steps = self.opt['GRADIENT_ACCUMULATE_STEP']
-        logger.info(f"Base learning rate: {self.opt['SOLVER']['BASE_LR']}")
-        logger.info(f"Number of GPUs: {self.opt['world_size']}")
-        logger.info(f"Gradient accumulation steps: {self.grad_acc_steps}")
+        # logger.info(f"Base learning rate: {self.opt['SOLVER']['BASE_LR']}")
+        # logger.info(f"Number of GPUs: {self.opt['world_size']}")
+        # logger.info(f"Gradient accumulation steps: {self.grad_acc_steps}")
 
         if self.opt['world_size'] > 1:
             add_hook()
@@ -84,7 +84,7 @@ class DistributedTrainer:
         if 'SAVE_DIR' not in self.opt:
             assert False, "Please initialize SAVE_DIR in your config file."
         self.opt['SAVE_DIR'] = os.path.normpath(self.opt['SAVE_DIR'])
-        logger.info(f"Setting SAVE_DIR as {self.opt['SAVE_DIR']}")
+        # logger.info(f"Setting SAVE_DIR as {self.opt['SAVE_DIR']}")
 
     def init_save_folder(self):
         """

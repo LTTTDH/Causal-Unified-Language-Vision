@@ -82,11 +82,11 @@ class VLPreDatasetMapper:
             image_format: an image format supported by :func:`detection_utils.read_image`.
         """
         self.tfm_gens = tfm_gens
-        logging.getLogger(__name__).info(
-            "[PretrainDatasetMapper] Full TransformGens used in training: {}".format(
-                str(self.tfm_gens)
-            )
-        )
+        # logging.getLogger(__name__).info(
+        #     "[PretrainDatasetMapper] Full TransformGens used in training: {}".format(
+        #         str(self.tfm_gens)
+        #     )
+        # )
 
         self.img_format = image_format
         self.is_train = is_train

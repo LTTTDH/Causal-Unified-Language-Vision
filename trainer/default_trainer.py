@@ -32,6 +32,7 @@ from .distributed_trainer import DistributedTrainer
 from .utils_trainer import UtilsTrainer
 from .utils.misc import *
 from .utils.serialization import JSONEncoder, filter_jsonable
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +50,11 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
         module = importlib.util.module_from_spec(spec)
         sys.modules[base_name] = module
         spec.loader.exec_module(module)
-        logger.info(f"Imported {base_name} at base_path {self.opt['base_path']}")
+        # logger.info(f"Imported {base_name} at base_path {self.opt['base_path']}")
 
         pipeline_module = importlib.import_module(f"base_dir.pipeline.{self.opt['PIPELINE']}")
         pipeline_class = getattr(pipeline_module, self.opt['PIPELINE'])
-        logger.info(f"Pipeline for training: {self.opt['PIPELINE']}")
+        # logger.info(f"Pipeline for training: {self.opt['PIPELINE']}")
         self.pipeline = pipeline_class(self.opt)
 
     def eval(self, ):
@@ -80,17 +81,15 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
         if self.opt['rank'] == 0: self.dictionary_display(results)
         if self.opt['rank'] == 0 and self.opt['WANDB']: wandb.log(results)
         return results
-
-    def _eval_on_set(self, save_folder):
-        logger.info(f"Evaluation start ...")
+    
+    
+    def _eval_on_set(self):
         if self.opt['FP16']:
             from torch.cuda.amp import autocast
             with autocast():
-                results = self.pipeline.evaluate_model(self, save_folder)
+                results = self.pipeline.evaluate_model(self)
         else:        
-            results = self.pipeline.evaluate_model(self, save_folder)
-        # if self.opt['rank'] == 0:
-        #     logger.info(results)
+            results = self.pipeline.evaluate_model(self)
         return results
 
     def compute_loss(self, forward_func, batch):
@@ -172,8 +171,8 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
         
     def init_train(self):
         self.mode = "train"
-        logger.info('-------------------------------------------------------')
-        logger.info("Training on rank: {}".format(self.opt['rank']))
+        # logger.info('-------------------------------------------------------')
+        # logger.info("Training on rank: {}".format(self.opt['rank']))
 
         self.raw_models = self.pipeline.initialize_model()
         self.model_names = list(self.raw_models.keys())
@@ -213,15 +212,15 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
         ######################
         # Start the main loop
         ######################
-        if self.opt['rank'] == 0:
-            # Train!
-            logger.info("***** Running training *****")
-            logger.info(f"  Num of GPUs = {self.opt['world_size']}")
-            logger.info(f"  Num Epochs = {self.opt['SOLVER']['MAX_NUM_EPOCHS']}")
-            logger.info(f"  Num of Mini Batches per Epoch = {self.train_params['updates_per_epoch']}")
-            logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {self.opt['SOLVER']['MAX_NUM_EPOCHS'] * self.train_params['updates_per_epoch']}")
-            logger.info(f"  Gradient Accumulation steps = {self.grad_acc_steps}")
-            logger.info(f"  Total optimization steps = {self.opt['SOLVER']['MAX_NUM_EPOCHS'] * self.train_params['updates_per_epoch'] // self.grad_acc_steps}")
+        # if self.opt['rank'] == 0:
+        #     # Train!
+        #     logger.info("***** Running training *****")
+        #     logger.info(f"  Num of GPUs = {self.opt['world_size']}")
+        #     logger.info(f"  Num Epochs = {self.opt['SOLVER']['MAX_NUM_EPOCHS']}")
+        #     logger.info(f"  Num of Mini Batches per Epoch = {self.train_params['updates_per_epoch']}")
+        #     logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {self.opt['SOLVER']['MAX_NUM_EPOCHS'] * self.train_params['updates_per_epoch']}")
+        #     logger.info(f"  Gradient Accumulation steps = {self.grad_acc_steps}")
+        #     logger.info(f"  Total optimization steps = {self.opt['SOLVER']['MAX_NUM_EPOCHS'] * self.train_params['updates_per_epoch'] // self.grad_acc_steps}")
 
     @staticmethod
     def dictionary_display(results):
@@ -257,10 +256,9 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
             logger.info(f"Start epoch: {epoch} training.")
             
             epoch_start_time = datetime.now()
-            for batch_idx, batch in enumerate(self.train_dataloaders):
-                if self.train_params['current_epoch_idx'] == self.train_params['start_epoch_idx']:
-                    if batch_idx < self.train_params['start_batch_idx']: # skip the first few batches for resuming
-                        continue
+            eval_period = self.train_params['updates_per_epoch'] // 4
+            prog_bar = tqdm(enumerate(self.train_dataloaders), total=self.train_params['updates_per_epoch'], leave=True)
+            for batch_idx, batch in prog_bar:
 
                 self.train_params['current_batch_idx'] = batch_idx
                 prev_optim_steps = current_optim_steps
@@ -272,47 +270,35 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
 
                 current_optim_steps = self._get_and_validate_current_optim_steps()
                 
-                # logging
-                if prev_optim_steps != current_optim_steps:  # an optimizer update was made
-                    log_first = self.opt.get("LOG_FIRST", 10)
-                    log_every = self.opt.get("LOG_EVERY", 100)
-                    if (current_optim_steps % log_every == 0) or (epoch == 0 and current_optim_steps <= log_first): # print logging
+                last_lr = {}
+                for module_name in self.model_names:
+                    last_lr[module_name] = self.lr_schedulers[module_name].get_last_lr()[0]
 
-                        last_lr = {}
-                        for module_name in self.model_names:
-                            last_lr[module_name] = self.lr_schedulers[module_name].get_last_lr()[0]
-
-                        train_time_delta = (datetime.now() - train_prev_logged_time).total_seconds()
-                        train_prev_logged_time = datetime.now()
-                        MB = 1024.0 * 1024.0
-                        memory = torch.cuda.max_memory_allocated() / MB
-
-                        if self.opt['rank'] == 0:
-                            if self.opt['WANDB']:
-                                # log for wandb
-                                wb_loss_info = {key: obj.val for key, obj in self.train_loss.losses.items()}
-                                wandb.log(wb_loss_info, step=self.prev_optim_steps)
-
-                            # log for terminal
-                            logger.info(f"epochs[{epoch:6}] optim steps[{current_optim_steps:.0f}] "
-                                        f"learning rate[{', '.join([f'{key}: {val:.5e}' for key, val in last_lr.items()])}] "
-                                        f"train loss[{', '.join([f'{key}: {obj.val:.5f}/{obj.avg:.5f}' for key, obj in self.train_loss.losses.items()])}] "
-                                        # f"total_loss[{total_loss:.5f}/{total_loss_avg:.5f} "
-                                        f"items per batch[{self.train_params['total_batch_size'] - prev_total_batch_size}] "
-                                        f"items per second[{(self.train_params['total_batch_size'] - prev_total_batch_size) / train_time_delta:.2f}] "
-                                        f"total items[{self.train_params['total_batch_size']}] "
-                                        f"mini batches[{self.train_params['num_updates']:6}] "
-                                        f"memory[{memory:.0f}] "
-                                        f"epoch remaining[{str((datetime.now() - epoch_start_time) / (batch_idx + 1) * (self.train_params['updates_per_epoch'] - batch_idx - 1)).split('.')[0]}]")
-
-                # evaluate and save ckpt every epoch
-                if batch_idx + 1 == self.train_params['updates_per_epoch']:
-                    self.save_checkpoint(self.train_params['num_updates'])
-                    results = self._eval_on_set(self.save_folder)
-                    if self.opt['rank'] == 0 and self.opt['WANDB']:
-                        wandb.log(results)
-                    break
-
-            logger.info(f"This epoch takes {datetime.now() - epoch_start_time}")
-            logger.info(f"PROGRESS: {100.0 * (epoch + 1) / num_epochs:.2f}%")
-            logger.info(f"Config files are at {self.opt['conf_files']}")
+                loss_list = [obj.val for _, obj in self.train_loss.losses.items()]
+                total_loss = sum(loss_list) / len(loss_list)
+                desc = f"|Epochs[{epoch+1}]|[{batch_idx+1}/{self.train_params['updates_per_epoch']}]|"
+                desc += f"LR[{', '.join([f'{val:.2e}' for _, val in last_lr.items()])}]|"
+                desc += f"Loss[{total_loss:.2f}]|"
+                prog_bar.set_description(desc, refresh=True)
+                
+                if (self.opt['rank'] == 0) and self.opt['WANDB']:
+                    # log for wandb
+                    wb_loss_info = {key: obj.val for key, obj in self.train_loss.losses.items()}
+                    wandb.log(wb_loss_info) #, step=self.train_params['updates_per_epoch'] * epoch + batch_idx
+                    wandb.log({'Total-Loss': total_loss}) # LBK-Total-Loss log
+                    wandb.log({'Learning-Rate': self.lr_schedulers['default'].get_last_lr()[0]}) # LBK-LR log
+                    wandb.log({'Epoch': epoch+1}) # LBK-LR log
+                    
+                                    
+                if batch_idx in [eval_period, eval_period*2, eval_period*3]:
+                    self.save_checkpoint(epoch+1)
+                    results = self._eval_on_set()
+                    if self.opt['rank'] == 0: self.dictionary_display(results)
+                    if self.opt['rank'] == 0 and self.opt['WANDB']: wandb.log(results)
+                
+            # evaluate and save ckpt every epoch
+            if self.opt['rank'] == 0: print('\n-----------Saving CKPT...-----------\n')
+            self.save_checkpoint(epoch+1)
+            results = self._eval_on_set()
+            if self.opt['rank'] == 0: self.dictionary_display(results)
+            if self.opt['rank'] == 0 and self.opt['WANDB']: wandb.log(results)
