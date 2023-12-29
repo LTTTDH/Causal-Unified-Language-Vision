@@ -57,6 +57,13 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
         # logger.info(f"Pipeline for training: {self.opt['PIPELINE']}")
         self.pipeline = pipeline_class(self.opt)
 
+
+    def eval_for_vl_model(self, ):
+        self.mode = "eval"
+        results = self._eval_on_set()
+        return results
+
+
     def eval(self, ):
         logger.info('-----------------------------------------------')
         logger.info("Evaluating model ... ")
@@ -77,7 +84,7 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
         else:
             raise ValueError(f"Model not found: {model_path}")
 
-        results = self._eval_on_set(self.save_folder)
+        results = self._eval_on_set()
         if self.opt['rank'] == 0: self.dictionary_display(results)
         if self.opt['rank'] == 0 and self.opt['WANDB']: wandb.log(results)
         return results
@@ -246,7 +253,7 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
         num_epochs = self.opt['SOLVER']['MAX_NUM_EPOCHS']
 
         if self.opt.get('EVAL_AT_START', False):
-            results = self._eval_on_set(self.save_folder)
+            results = self._eval_on_set()
             if self.opt['rank'] == 0 and self.opt['WANDB']:
                 wandb.log(results)
 
@@ -255,14 +262,12 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
             self.train_params['current_epoch_idx'] = epoch
             logger.info(f"Start epoch: {epoch} training.")
             
-            epoch_start_time = datetime.now()
             eval_period = self.train_params['updates_per_epoch'] // 4
             prog_bar = tqdm(enumerate(self.train_dataloaders), total=self.train_params['updates_per_epoch'], leave=True)
             for batch_idx, batch in prog_bar:
 
                 self.train_params['current_batch_idx'] = batch_idx
                 prev_optim_steps = current_optim_steps
-                prev_total_batch_size = self.train_params['total_batch_size']
 
                 # update
                 self.prev_optim_steps = prev_optim_steps

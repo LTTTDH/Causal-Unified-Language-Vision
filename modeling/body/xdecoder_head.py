@@ -95,14 +95,14 @@ class XdecoderHead(nn.Module):
             ),
         }
 
-    def forward(self, features, mask=None, target_queries=None, target_vlp=None, task='seg', extra={}):
-        return self.layers(features, mask, target_queries, target_vlp, task, extra)
+    def forward(self, features, mask=None, target_queries=None, target_vlp=None, task='seg', extra={}, is_train=False):
+        return self.layers(features, mask, target_queries, target_vlp, task, extra, is_train)
 
-    def layers(self, features, mask=None, target_queries=None, target_vlp=None, task='seg', extra={}):
+    def layers(self, features, mask=None, target_queries=None, target_vlp=None, task='seg', extra={}, is_train=False):
         mask_features, transformer_encoder_features, multi_scale_features = self.pixel_decoder.forward_features(features)
         
         if self.transformer_in_feature == "multi_scale_pixel_decoder":
-            predictions = self.predictor(multi_scale_features, mask_features, mask, target_queries, target_vlp, task, extra)
+            predictions = self.predictor(multi_scale_features, mask_features, mask, target_queries, target_vlp, task, extra, is_train)
         else:
             if self.transformer_in_feature == "transformer_encoder":
                 assert (

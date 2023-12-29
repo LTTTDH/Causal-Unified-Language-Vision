@@ -40,6 +40,7 @@ class LlavaLlamaModel(LlavaMetaModel, LlamaModel):
 
 class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
     config_class = LlavaConfig
+    IGNORE_INDEX = -100
 
     def __init__(self, config):
         super(LlamaForCausalLM, self).__init__(config)
@@ -48,21 +49,138 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         # Initialize weights and apply final processing
         self.post_init()
-
+        
     def get_model(self):
         return self.model
 
     def propmt_engineering(self, prompt, tokenizer):
-        tok = tokenizer(prompt, return_tensors="pt")
-        tok_embed = self.model.embed_tokens(tok['input_ids'][:, 1:])
-        tok_attn_mask = tok['attention_mask'][:, 1:]
-        return tok_embed.squeeze(0), tok_attn_mask.squeeze(0)
+        tok = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
+        tok_embed = self.model.embed_tokens(tok['input_ids'])
+        tok_id = tok['input_ids']
+        tok_attn_mask = tok['attention_mask']
+        return tok_id.squeeze(0), tok_embed.squeeze(0), tok_attn_mask.squeeze(0)
+
+    def make_preliminary_prompt(self, tokenizer):
+        # CuLLaVO Prompt
+        img_pt = " represents an image information for visual understanding. "
+        _, self.img_pt_embed, self.img_pt_attn_mask = self.propmt_engineering(img_pt, tokenizer)
+
+        gen_pt = " represents mask proposals for many general-focus parts in this image. "
+        _, self.gen_pt_embed, self.gen_pt_attn_mask = self.propmt_engineering(gen_pt, tokenizer)
+
+        ref_pt = "If a user wants to segment the followings: "
+        _, self.ref_pt_embed, self.ref_pt_attn_mask = self.propmt_engineering(ref_pt, tokenizer)
+        
+        ref_pt2 = ", then "
+        _, self.ref_pt2_embed, self.ref_pt2_attn_mask = self.propmt_engineering(ref_pt2, tokenizer)
+
+        ref_pt3 = " represents mask proposals for specific-focus parts that a user wants to segment."
+        _, self.ref_pt3_embed, self.ref_pt3_attn_mask = self.propmt_engineering(ref_pt3, tokenizer)
+
+        des_pt = "The short image description of this image is <"
+        self.des_pt_id, self.des_pt_embed, self.des_pt_attn_mask = self.propmt_engineering(des_pt, tokenizer)
+
+        des_pt2 = ">."
+        self.des_pt2_id, self.des_pt2_embed, self.des_pt2_attn_mask = self.propmt_engineering(des_pt2, tokenizer)
+
+    def cullavo_multimodal_inputs(self,
+                             img_features,
+                             img_description, 
+                             ref_description,
+                             gen_proposals, 
+                             ref_proposals, 
+                             tokenizer):
+
+        # CuLLaVO Outputs
+        full_text = []
+        full_label = []
+        full_attn = []
+        start_gen_prop_idx_list = []
+        start_ref_prop_idx_list = []
+
+        for img_feat, img_des, ref_des, gen_prop, ref_prop in zip(img_features, img_description, ref_description, gen_proposals, ref_proposals):
+            # BOS token
+            tok = tokenizer('<s>', return_tensors='pt', add_special_tokens=False)
+            text = self.model.embed_tokens(tok['input_ids']).squeeze(0)
+            attn = tok['attention_mask'].squeeze(0)
+            label = attn * self.IGNORE_INDEX
+            
+            # "<Image> represents an image information for visual understanding. "
+            text = torch.cat([text, img_feat, self.img_pt_embed], dim=0)
+            attn = torch.cat([attn, torch.ones(img_feat.shape[0]), self.img_pt_attn_mask], dim=0)           
+            label = attn * self.IGNORE_INDEX
+            assert (len(text) == len(label)) and (len(text) == len(attn)), Exception("No!")
+            
+            if gen_prop is not None:
+                # "<GEN_SEG> represents mask proposals for many general-focus parts in this image. "
+                start_gen_prop_idx_list.append(len(text))
+                text = torch.cat([text, gen_prop, self.gen_pt_embed], dim=0)
+                attn = torch.cat([attn, torch.ones(gen_prop.shape[0]), self.gen_pt_attn_mask], dim=0)
+                label = attn * self.IGNORE_INDEX
+                assert (len(text) == len(label)) and (len(text) == len(attn)), Exception("No!")
+            
+            if ref_prop is not None:
+                # "If a user wants to segment the followings: <REF_CAPTION>"
+                tok = tokenizer(ref_des, return_tensors="pt", add_special_tokens=False)
+                text = torch.cat([text, self.ref_pt_embed, self.model.embed_tokens(tok['input_ids']).squeeze(0)], dim=0)
+                attn = torch.cat([attn, self.ref_pt_attn_mask, tok['attention_mask'].squeeze(0)], dim=0)
+                label = attn * self.IGNORE_INDEX
+                assert (len(text) == len(label)) and (len(text) == len(attn)), Exception("No!")
+
+                # ", then "
+                text = torch.cat([text, self.ref_pt2_embed], dim=0)
+                attn = torch.cat([attn, self.ref_pt2_attn_mask], dim=0)
+                label = attn * self.IGNORE_INDEX
+                assert (len(text) == len(label)) and (len(text) == len(attn)), Exception("No!")
+
+                # "<REF_SEG> represents mask proposals for specific-focus parts that a user wants to segment."
+                start_ref_prop_idx_list.append(len(text))
+                text = torch.cat([text, ref_prop, self.ref_pt3_embed], dim=0)
+                attn = torch.cat([attn, torch.ones(ref_prop.shape[0]), self.ref_pt3_attn_mask], dim=0)
+                label = attn * self.IGNORE_INDEX
+                assert (len(text) == len(label)) and (len(text) == len(attn)), Exception("No!")
+            
+            if img_des is not None:
+                # "The short image description of this image is <<IMG_DES>"
+                tok = tokenizer(img_des, return_tensors="pt", add_special_tokens=False)
+                text = torch.cat([text, self.des_pt_embed, self.model.embed_tokens(tok['input_ids']).squeeze(0)], dim=0)
+                attn = torch.cat([attn, self.des_pt_attn_mask, tok['attention_mask'].squeeze(0)], dim=0)
+                label = torch.cat([label, self.des_pt_attn_mask[:-1] * self.IGNORE_INDEX, self.des_pt_id[-1].unsqueeze(0), tok['input_ids'].squeeze(0)], dim=0)
+                assert (len(text) == len(label)) and (len(text) == len(attn)), Exception("No!")
+                
+                # ">."
+                text = torch.cat([text, self.des_pt2_embed], dim=0)
+                attn = torch.cat([attn, self.des_pt2_attn_mask], dim=0)
+                label = torch.cat([label, self.des_pt2_id], dim=0)
+                assert (len(text) == len(label)) and (len(text) == len(attn)), Exception("No!")
+            
+            tok = tokenizer('</s>', return_tensors='pt', add_special_tokens=False)
+            text = torch.cat([text, self.model.embed_tokens(tok['input_ids']).squeeze(0)], dim=0)
+            attn = torch.cat([attn, tok['attention_mask'].squeeze(0)], dim=0)
+            label = torch.cat([label, tok['input_ids'].squeeze(0)], dim=0)
+            assert (len(text) == len(label)) and (len(text) == len(attn)), Exception("No!")
+
+            full_text.append(text)
+            full_attn.append(attn)
+            full_label.append(label)
+            
+        inputs_embeds=torch.nn.utils.rnn.pad_sequence(full_text, batch_first=True)
+        attention_mask=torch.nn.utils.rnn.pad_sequence(full_attn, batch_first=True).bool()
+        
+        if img_des is not None:
+            labels=torch.nn.utils.rnn.pad_sequence(full_label, batch_first=True, padding_value=self.IGNORE_INDEX).to(torch.int64)
+        else:
+            labels=None
+            
+        return inputs_embeds, attention_mask, labels, start_gen_prop_idx_list, start_ref_prop_idx_list
+        
+
 
     def forward(
         self,        
+        img_features=None,
         img_description=None,
         ref_description=None,
-        img_features=None,
         gen_proposals=None,
         ref_proposals=None,
         tokenizer=None,
@@ -76,74 +194,11 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         return_dict=None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
 
-        image_prompt_pre = "This is an image information representing visual understanding: (A):"
-        image_prompt_pre_embed, image_prompt_pre_attn_mask = self.propmt_engineering(image_prompt_pre, tokenizer)
-    
-        image_prompt_post = f" where its short description is "
-        image_prompt_post_embed, image_prompt_post_attn_mask = self.propmt_engineering(image_prompt_post, tokenizer)
-
-        seg_prompt = ", and this is mask proposals representing many key-focus for general segmentation: "
-        seg_prompt_embed, seg_prompt_attn_mask = self.propmt_engineering(seg_prompt, tokenizer)
-
-        ref_propmt_pre = f". One more, if a user wants to segment <"
-        ref_propmt_pre_embed, ref_prompt_pre_attn_mask = self.propmt_engineering(ref_propmt_pre, tokenizer)
-
-        ref_prompt_post = ">, and this will be referring mask proposals representing specific-focus area that a user wants to segment: (A):"
-        ref_propmt_post_embed, ref_propmt_post_attn_mask = self.propmt_engineering(ref_prompt_post, tokenizer)
-
-        full_text = []
-        full_label = []
-        full_attn = []
-        start_gen_prop_idx_list = []
-        start_ref_prop_idx_list = []
-        for img_des, ref_des, img_feat, gen_prop, ref_prop in zip(img_description, ref_description, img_features, gen_proposals, ref_proposals):
-            tok = tokenizer('<s>', return_tensors='pt')
-            text = self.model.embed_tokens(tok['input_ids'][:, 1:]).squeeze(0)
-            label = tok['attention_mask'][:, 1:].squeeze(0) * (-100)
-            attn = tok['attention_mask'][:, 1:].squeeze(0)
-            
-            text = torch.cat([text, image_prompt_pre_embed, img_feat], dim=0)
-            label = torch.cat([label, image_prompt_pre_attn_mask * (-100), torch.ones(img_feat.shape[0])* (-100)], dim=0)
-            attn = torch.cat([attn, image_prompt_pre_attn_mask, torch.ones(img_feat.shape[0])], dim=0)            
-            
-            tok = tokenizer(img_des, return_tensors="pt")
-            text = torch.cat([text, image_prompt_post_embed, self.model.embed_tokens(tok['input_ids'][:, 1:]).squeeze(0)], dim=0)
-            label = torch.cat([label, image_prompt_post_attn_mask * (-100), tok['attention_mask'][:, 1:].squeeze(0) * (-100)], dim=0)
-            attn = torch.cat([attn, image_prompt_post_attn_mask, tok['attention_mask'][:, 1:].squeeze(0)], dim=0)
-            
-            start_gen_prop_idx_list.append(len(text) + len(seg_prompt_embed))
-            text = torch.cat([text, seg_prompt_embed, gen_prop], dim=0)
-            label = torch.cat([label, seg_prompt_attn_mask * (-100), torch.ones(gen_prop.shape[0])* (-100)], dim=0)
-            attn = torch.cat([attn, seg_prompt_attn_mask, torch.ones(gen_prop.shape[0])], dim=0)
-
-            tok = tokenizer(ref_des, return_tensors="pt")
-            text = torch.cat([text, ref_propmt_pre_embed, self.model.embed_tokens(tok['input_ids'][:, 1:]).squeeze(0)], dim=0)
-            label = torch.cat([label, ref_prompt_pre_attn_mask * (-100), tok['attention_mask'][:, 1:].squeeze(0) * (-100)], dim=0)
-            attn = torch.cat([attn, ref_prompt_pre_attn_mask, tok['attention_mask'][:, 1:].squeeze(0)], dim=0)
-
-            start_ref_prop_idx_list.append(len(text) + len(ref_propmt_post_embed))
-            text = torch.cat([text, ref_propmt_post_embed, ref_prop], dim=0)
-            label = torch.cat([label, ref_propmt_post_attn_mask * (-100), torch.ones(ref_prop.shape[0])* (-100)], dim=0)
-            attn = torch.cat([attn, ref_propmt_post_attn_mask, torch.ones(ref_prop.shape[0])], dim=0)
-
-            tok = tokenizer('</s>', return_tensors='pt')
-            text = torch.cat([text, self.model.embed_tokens(tok['input_ids'][:, 1:]).squeeze(0)], dim=0)
-            label = torch.cat([label, tok['attention_mask'][:, 1:].squeeze(0) * (-100)], dim=0)
-            attn = torch.cat([attn, tok['attention_mask'][:, 1:].squeeze(0)], dim=0)
-
-            full_text.append(text)
-            full_label.append(label)
-            full_attn.append(attn)
-
-
-        attention_mask=torch.nn.utils.rnn.pad_sequence(full_attn, batch_first=True).bool()
-        inputs_embeds=torch.nn.utils.rnn.pad_sequence(full_text, batch_first=True)
-        # labels=torch.nn.utils.rnn.pad_sequence(full_label, batch_first=True, padding_value=-100)
-        labels = None
-
+        inputs_embeds, attention_mask, labels, start_gen_prop_idx_list, start_ref_prop_idx_list = \
+            self.cullavo_multimodal_inputs(img_features, img_description, ref_description, gen_proposals, ref_proposals, tokenizer)
 
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
-        with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+        with torch.cuda.amp.autocast():
             outputs = self.model(
                 attention_mask=attention_mask,
                 inputs_embeds=inputs_embeds,
@@ -151,29 +206,42 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
 
             hidden_states = outputs[0]
             logits = self.lm_head(hidden_states)
-        logits = logits.float()
+            logits = logits.float()
 
-        loss = None
-        if labels is not None:
-            # Shift so that tokens < n predict n
-            shift_logits = logits[..., :-1, :].contiguous()
-            shift_labels = labels[..., 1:].contiguous()
-            # Flatten the tokens
-            shift_logits = shift_logits.view(-1, self.config.vocab_size)
-            shift_labels = shift_labels.view(-1)
-            # Enable model parallelism
-            shift_labels = shift_labels.to(shift_logits.device)
-            loss = F.cross_entropy(shift_logits, shift_labels)
+            loss = None
+            if labels is not None:
+                # Shift so that tokens < n predict n
+                shift_logits = logits[..., :-1, :].contiguous()
+                shift_labels = labels[..., 1:].contiguous()
+                # Flatten the tokens
+                shift_logits = shift_logits.view(-1, self.config.vocab_size)
+                shift_labels = shift_labels.view(-1)
+                # Enable model parallelism
+                shift_labels = shift_labels.to(shift_logits.device)
+                loss = F.cross_entropy(shift_logits, shift_labels)
         
-        gen_tensor_list = []
-        ref_tensor_list = []
-        for idx, (start_gen_id, start_ref_id) in enumerate(zip(start_gen_prop_idx_list, start_ref_prop_idx_list)):
-            gen_tensor_list.append(hidden_states[idx][start_gen_id: start_gen_id+200].unsqueeze(0))
-            ref_tensor_list.append(hidden_states[idx][start_ref_id: start_ref_id+200].unsqueeze(0))
-        gen_tensor = torch.cat(gen_tensor_list, dim=0)
-        ref_tensor = torch.cat(ref_tensor_list, dim=0)
-
-        return loss, gen_tensor, ref_tensor 
+        # CuLLaVO
+        if gen_proposals[0] is None:
+            ref_tensor_list = []
+            for idx, start_ref_id in enumerate(start_ref_prop_idx_list):
+                ref_tensor_list.append(hidden_states[idx][start_ref_id: start_ref_id+200].unsqueeze(0))
+            ref_tensor = torch.cat(ref_tensor_list, dim=0)
+            return loss, ref_tensor
+        elif ref_proposals[0] is None:
+            gen_tensor_list = []
+            for idx, start_gen_id in enumerate(start_gen_prop_idx_list):
+                gen_tensor_list.append(hidden_states[idx][start_gen_id: start_gen_id+200].unsqueeze(0))
+            gen_tensor = torch.cat(gen_tensor_list, dim=0)
+            return loss, gen_tensor
+        else:
+            gen_tensor_list = []
+            ref_tensor_list = []
+            for idx, (start_gen_id, start_ref_id) in enumerate(zip(start_gen_prop_idx_list, start_ref_prop_idx_list)):
+                gen_tensor_list.append(hidden_states[idx][start_gen_id: start_gen_id+200].unsqueeze(0))
+                ref_tensor_list.append(hidden_states[idx][start_ref_id: start_ref_id+200].unsqueeze(0))
+            gen_tensor = torch.cat(gen_tensor_list, dim=0)
+            ref_tensor = torch.cat(ref_tensor_list, dim=0)
+            return loss, gen_tensor, ref_tensor 
 
 
     def prepare_inputs_for_generation(
@@ -198,5 +266,5 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         )
         return model_inputs
 
-AutoConfig.register("llava", LlavaConfig)
-AutoModelForCausalLM.register(LlavaConfig, LlavaLlamaForCausalLM)
+# AutoConfig.register("llava", LlavaConfig)
+# AutoModelForCausalLM.register(LlavaConfig, LlavaLlamaForCausalLM)

@@ -1,3 +1,3 @@
-# CuLLAVO: Causal unified Large LAnguage-VisiOn Model
+# CuLLaVO: Causally-unified Large-Language-and-Vision-Oracle
 
-> This is Pytorch Implementation to construct Causal unified Large LAnguage-VisiOn Model (CuLLAVO) by leaveraging Multi-Modal Large Language Model.
+> This is Pytorch Implementation to build Causally-unified Large-Lnguage-and-Vision-Oracle (CuLLaVO) by leaveraging Multi-Modal Large Language Model.

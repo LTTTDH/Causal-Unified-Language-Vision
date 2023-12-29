@@ -29,7 +29,7 @@ from ..language.loss import vl_similarity, image_text_contrastive_loss_queue
 from utils.prompt_engineering import prompt_engineering
 from utils.constants import COCO_PANOPTIC_CLASSES
 
-# CuLLAVO
+# CuLLaVO
 from llm.load_llm import prepare_llm
 from ..interface.modules import MLP
 
@@ -44,13 +44,13 @@ class GeneralizedXdecoder(nn.Module):
         *,
         backbone: Backbone,
         sem_seg_head: nn.Module,
-        llm,
-        llm_tokenizer,
-        mlp_img_feat,
-        mlp_gen_prop,
-        mlp_ref_prop,
-        mlp_gen_prop_end,
-        mlp_ref_prop_end,
+        llm, # CuLLaVO
+        llm_tokenizer, # CuLLaVO
+        mlp_img_feat, # CuLLaVO
+        mlp_gen_prop, # CuLLaVO
+        mlp_ref_prop, # CuLLaVO
+        mlp_gen_prop_end, # CuLLaVO
+        mlp_ref_prop_end, # CuLLaVO
         criterion: nn.Module,
         losses: dict,
         num_queries: int,
@@ -100,15 +100,15 @@ class GeneralizedXdecoder(nn.Module):
         super().__init__()
         self.backbone = backbone
         self.sem_seg_head = sem_seg_head
-        self.llm = llm # CuLLAVO
-        self.llm_tokenizer = llm_tokenizer # CuLLAVO
-        self.mlp_img_feat = mlp_img_feat # CuLLAVO
-        self.mlp_gen_prop = mlp_gen_prop # CuLLAVO
-        self.mlp_ref_prop = mlp_ref_prop # CuLLAVO
-        self.mlp_gen_prop_end = mlp_gen_prop_end # CuLLAVO
-        self.mlp_ref_prop_end = mlp_ref_prop_end # CuLLAVO
-        self.mlp_layer_norm = nn.LayerNorm(512) # CuLLAVO
-        self.mlp_mask_embed = MLP(512, 512, 512, 3) # CuLLAVO
+        self.llm = llm # CuLLaVO
+        self.llm_tokenizer = llm_tokenizer # CuLLaVO
+        self.mlp_img_feat = mlp_img_feat # CuLLaVO
+        self.mlp_gen_prop = mlp_gen_prop # CuLLaVO
+        self.mlp_ref_prop = mlp_ref_prop # CuLLaVO
+        self.mlp_gen_prop_end = mlp_gen_prop_end # CuLLaVO
+        self.mlp_ref_prop_end = mlp_ref_prop_end # CuLLaVO
+        self.mlp_layer_norm = nn.LayerNorm(512) # CuLLaVO
+        self.mlp_mask_embed = MLP(512, 512, 512, 3) # CuLLaVO
         self.criterion = criterion
         self.losses = losses
         self.num_queries = num_queries
@@ -143,6 +143,9 @@ class GeneralizedXdecoder(nn.Module):
 
         if not self.semantic_on:
             assert self.sem_seg_postprocess_before_inference
+        
+        # CuLLaVO
+        self.connector_freeze()
 
     @classmethod
     def from_config(cls, cfg):
@@ -180,17 +183,18 @@ class GeneralizedXdecoder(nn.Module):
         lang_encoder = build_language_encoder(cfg)        
         sem_seg_head = build_xdecoder_head(cfg, backbone.output_shape(), lang_encoder, extra)
 
-        # CuLLAVO
+        # CuLLaVO
         if cfg['LLM']['LOAD_LLM']:
             bits = cfg['LLM']['BITS']
             llm, llm_tokenizer, _ = prepare_llm(bits=bits)
+            llm.make_preliminary_prompt(llm_tokenizer)
             mlp_img_feat = nn.Sequential(nn.Linear(1536, 4096), nn.GELU(), nn.Linear(4096, 4096))
             mlp_gen_prop = nn.Sequential(nn.Linear(512, 4096), nn.GELU(), nn.Linear(4096, 4096))
             mlp_ref_prop = nn.Sequential(nn.Linear(512, 4096), nn.GELU(), nn.Linear(4096, 4096))
             mlp_gen_prop_end = nn.Sequential(nn.Linear(4096, 4096), nn.GELU(), nn.Linear(4096, 512))
             mlp_ref_prop_end = nn.Sequential(nn.Linear(4096, 4096), nn.GELU(), nn.Linear(4096, 512))
         else:
-            llm, llm_tokenizer, mlp_img_feat, mlp_gen_prop, mlp_ref_prop, mlp_gen_prop_end, mlp_ref_prop_end = None, None, None, None, None
+            llm, llm_tokenizer, mlp_img_feat, mlp_gen_prop, mlp_ref_prop, mlp_gen_prop_end, mlp_ref_prop_end = None, None, None, None, None, None, None
 
         # building criterion
         matcher = HungarianMatcher(
@@ -222,6 +226,7 @@ class GeneralizedXdecoder(nn.Module):
                         weight_dict["loss_{}_{}_0".format(key, key_)] = weight # NOTE: hard code for segmentation that has multiple loss
                 else:
                     weight_dict["loss_{}_0".format(key)] = loss_weights[key]
+        weight_dict.update({'loss_llm': 1}) # CuLLaVO
         
         # generate full weight dict and remove not computed layers. 
         if deep_supervision:
@@ -256,13 +261,13 @@ class GeneralizedXdecoder(nn.Module):
         return {
             "backbone": backbone,
             "sem_seg_head": sem_seg_head,
-            "llm": llm, # CuLLAVO
-            "llm_tokenizer": llm_tokenizer, # CuLLAVO
-            "mlp_img_feat": mlp_img_feat, # CuLLAVO
-            "mlp_gen_prop": mlp_gen_prop, # CuLLAVO
-            "mlp_ref_prop": mlp_ref_prop, # CuLLAVO
-            "mlp_gen_prop_end": mlp_gen_prop_end, # CuLLAVO
-            "mlp_ref_prop_end": mlp_ref_prop_end, # CuLLAVO
+            "llm": llm, # CuLLaVO
+            "llm_tokenizer": llm_tokenizer, # CuLLaVO
+            "mlp_img_feat": mlp_img_feat, # CuLLaVO
+            "mlp_gen_prop": mlp_gen_prop, # CuLLaVO
+            "mlp_ref_prop": mlp_ref_prop, # CuLLaVO
+            "mlp_gen_prop_end": mlp_gen_prop_end, # CuLLaVO
+            "mlp_ref_prop_end": mlp_ref_prop_end, # CuLLaVO
             "criterion": criterion,
             "losses": losses,
             "num_queries": dec_cfg['NUM_OBJECT_QUERIES'],
@@ -320,8 +325,14 @@ class GeneralizedXdecoder(nn.Module):
                     segments_info (list[dict]): Describe each segment in `panoptic_seg`.
                         Each dict contains keys "id", "category_id", "isthing".
         """
-        # CuLLAVO
-        self.connector_eval_and_freeze()
+        # a = batched_inputs['coco'][1]['image'].flip(0).permute(1,2,0).cpu().numpy()
+        # b = batched_inputs['coco'][1]['instances'].gt_masks[0].unsqueeze(2).cpu().numpy()
+        # c = batched_inputs['coco'][1]['groundings']['masks'][0].unsqueeze(2).cpu().numpy()
+        # for i in range(batched_inputs['coco'][1]['instances'].gt_masks.shape[0]):
+        #     a[torch.where(batched_inputs['coco'][1]['instances'].gt_masks[i].float() == 1)] = 128
+        
+        # CuLLaVO
+        self.connector_eval()
 
         if self.training:
             losses = {}
@@ -345,9 +356,11 @@ class GeneralizedXdecoder(nn.Module):
             elif mode == 'classification':
                 return self.evaluate_classification(batched_inputs)
             elif mode == 'grounding_refcoco':
-                return self.evaluate_grounding(batched_inputs, mode)
+                # return self.evaluate_grounding(batched_inputs)
+                return self.evaluate_grounding_with_llm(batched_inputs)
             else:
-                return self.evaluate(batched_inputs)
+                # return self.evaluate(batched_inputs)
+                return self.evaluate_with_llm(batched_inputs)
 
         # if self.training:
         #     losses = {}
@@ -375,13 +388,25 @@ class GeneralizedXdecoder(nn.Module):
         #     else:
         #         return self.evaluate(batched_inputs)
 
-    # CuLLAVO
-    def connector_eval_and_freeze(self):
+    # CuLLaVO
+    def connector_eval(self):
+        connector_model_list = [self.backbone]
+        for model in connector_model_list: model.eval()
+
+    # CuLLaVO
+    def connector_freeze(self):
+        connector_model_list = [self.backbone]
+        for model in connector_model_list:
+            for name, param in model.named_parameters():
+                param.requires_grad = False
+                
+    # CuLLaVO
+    def connector_freeze_with_llm(self):
         connector_model_list = [self.backbone, self.sem_seg_head]
         for model in connector_model_list:
-            model.eval()
             for param in model.parameters():
                 param.requires_grad = False
+                
 
     def forward_seg_with_llm(self, batched_inputs):
         images = [x["image"].to(self.device) for x in batched_inputs]
@@ -402,57 +427,43 @@ class GeneralizedXdecoder(nn.Module):
                 extra['grounding_tokens'] = grounding_tokens
 
         features = self.backbone(images.tensor)
-        outputs = self.sem_seg_head(features, extra=extra)
+        outputs = self.sem_seg_head(features, extra=extra, is_train=True)
 
-        # CuLLAVO: output splits
+        # CuLLaVO: output splits
         gen_seg, cls_seg, ref_seg = \
             outputs['pred_outputs_for_cullavo'][:self.num_queries-1], \
                 outputs['pred_outputs_for_cullavo'][self.num_queries-1], \
                     outputs['pred_outputs_for_cullavo'][self.num_queries:]
         
-        # CuLLAVO: llm preparation
-        loss, gen_tensor, ref_tensor = \
-        self.llm(img_description=[" ".join(x['captions']) for x in batched_inputs],
-                 ref_description=[" ".join(x['groundings']['texts']) for x in batched_inputs],
-                 img_features=self.mlp_img_feat(features['res5'].flatten(2,3).permute(0, 2, 1).contiguous()),
-                 gen_proposals=self.mlp_gen_prop(gen_seg.transpose(0, 1)),
-                 ref_proposals=self.mlp_ref_prop(ref_seg.transpose(0, 1)),
-                 tokenizer=self.llm_tokenizer)
+        # CuLLaVO: feature interpolation
+        img_features = F.interpolate(features['res5'], size=(24, 24))
+        
+        # CuLLaVO: llm preparation
+        loss_llm, gen_tensor, ref_tensor = self.llm(img_features=self.mlp_img_feat(img_features.flatten(2,3).permute(0, 2, 1).contiguous()),
+                                                    img_description=[x['captions'][random.randint(0, len(x['captions'])-1)] for x in batched_inputs],
+                                                    ref_description=[", and ".join(list(map(str, list(x['cullavo_grounding'])))) for x in targets],
+                                                    gen_proposals=self.mlp_gen_prop(gen_seg.transpose(0, 1)),
+                                                    ref_proposals=self.mlp_ref_prop(ref_seg.transpose(0, 1)),
+                                                    tokenizer=self.llm_tokenizer)
 
-        # CuLLAVO
+        # CuLLaVO
         llm_outputs = torch.cat([self.mlp_gen_prop_end(gen_tensor),
                          cls_seg.unsqueeze(1),
                          self.mlp_ref_prop_end(ref_tensor)], dim=1)
-        outputs = self.prediction_heads(llm_outputs, outputs['pred_mask_features_for_cullavo'])
-
+        res_outputs = self.llm_prediction_heads(llm_outputs, outputs['pred_mask_features_for_cullavo'])
 
         _outputs = {}
-        for key, value in outputs.items():
+        for key, value in res_outputs.items():
             if key == 'pred_logits':
-                _outputs[key] = value[:,:self.num_queries-1]
+                _outputs[key] = value[:,:self.num_queries-1] + outputs[key][:,:self.num_queries-1]
             elif key == 'pred_masks':
-                _outputs[key] = value[:,:self.num_queries-1]
+                _outputs[key] = value[:,:self.num_queries-1] + outputs[key][:,:self.num_queries-1]
                 if self.task_switch['grounding']:
-                    _outputs['pred_gmasks'] = value[:,self.num_queries:2*self.num_queries-1]
+                    _outputs['pred_gmasks'] = value[:,self.num_queries:2*self.num_queries-1] + outputs[key][:,self.num_queries:2*self.num_queries-1]
             elif key == 'pred_captions':
-                _outputs[key] = value[:,:self.num_queries-1]
+                _outputs[key] = value[:,:self.num_queries-1] + outputs[key][:,:self.num_queries-1]
                 if self.task_switch['grounding']:
-                    _outputs['pred_gtexts'] = value[:,self.num_queries:2*self.num_queries-1]
-            elif key == 'aux_outputs':
-                _outputs[key] = []
-                for i in range(len(value)):
-                    _outputs[key] += [{}]
-                    for _key, _value in value[i].items():
-                        if _key == 'pred_logits':
-                            _outputs[key][i][_key] = _value[:,:self.num_queries-1]
-                        elif _key == 'pred_masks':
-                            _outputs[key][i][_key] = _value[:,:self.num_queries-1]
-                            if self.task_switch['grounding']:
-                                _outputs[key][i]['pred_gmasks'] = _value[:,self.num_queries:2*self.num_queries-1]
-                        elif _key == 'pred_captions':
-                            _outputs[key][i][_key] = _value[:,:self.num_queries-1]
-                            if self.task_switch['grounding']:
-                                _outputs[key][i]['pred_gtexts'] = _value[:,self.num_queries:2*self.num_queries-1]        
+                    _outputs['pred_gtexts'] = value[:,self.num_queries:2*self.num_queries-1] + outputs[key][:,self.num_queries:2*self.num_queries-1]
         outputs = _outputs
 
         extra = {'lang_logit': self.sem_seg_head.predictor.lang_encoder.logit_scale,
@@ -461,13 +472,14 @@ class GeneralizedXdecoder(nn.Module):
         # bipartite matching-based loss
         self.criterion.losses = self.losses['seg'] # seg criterion losses
         losses = self.criterion(outputs, targets, extra)
+        losses.update({'loss_llm': loss_llm}) # CuLLaVO
 
         del outputs
         del _outputs
         return losses
 
 
-    def prediction_heads(self, output, mask_features):
+    def llm_prediction_heads(self, output, mask_features):
         decoder_output = self.mlp_layer_norm(output)
 
         # recompute class token output.
@@ -607,16 +619,34 @@ class GeneralizedXdecoder(nn.Module):
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
         
         images = ImageList.from_tensors(images, self.size_divisibility)
-        img_bs = images.tensor.shape[0]
 
-        targets = targets_grounding = queries_grounding = None
+        # CuLLaVO: evaluate with LLM
         features = self.backbone(images.tensor)
-        outputs = self.sem_seg_head(features, target_queries=queries_grounding)
+        outputs = self.sem_seg_head(features)
 
-        mask_cls_results = outputs["pred_logits"]
-        mask_pred_results = outputs["pred_masks"]
-        box_pred_results = outputs["pred_boxes"] if self.task_switch['bbox'] else [None for i in range(len(mask_pred_results))]
-        caption_pred_results = outputs["pred_captions"] if self.task_switch['caption'] else [None for i in range(len(mask_pred_results))]
+        # CuLLaVO: output splits
+        gen_seg, cls_seg = outputs['pred_outputs_for_cullavo'][:self.num_queries-1], outputs['pred_outputs_for_cullavo'][self.num_queries-1]
+        
+        # CuLLaVO: feature interpolation
+        img_features = F.interpolate(features['res5'], size=(24, 24))
+        
+        # CuLLaVO: llm preparation
+        _, gen_tensor = self.llm(img_features=self.mlp_img_feat(img_features.flatten(2,3).permute(0, 2, 1).contiguous()),
+                                img_description=[None for _ in batched_inputs],
+                                ref_description=[None for _ in batched_inputs],
+                                gen_proposals=self.mlp_gen_prop(gen_seg.transpose(0, 1)),
+                                ref_proposals=[None for _ in batched_inputs],
+                                tokenizer=self.llm_tokenizer)
+
+        # CuLLaVO
+        llm_outputs = torch.cat([self.mlp_gen_prop_end(gen_tensor), cls_seg.unsqueeze(1)], dim=1)
+        res_outputs = self.llm_prediction_heads(llm_outputs, outputs['pred_mask_features_for_cullavo'])
+
+        #  CuLLaVO 
+        mask_cls_results = res_outputs["pred_logits"] + outputs["pred_logits"]
+        mask_pred_results = res_outputs["pred_masks"] + outputs["pred_masks"]
+        box_pred_results = [None for _ in range(len(mask_pred_results))]
+        caption_pred_results = [None for _ in range(len(mask_pred_results))]
 
         # upsample masks
         mask_pred_results = F.interpolate(
@@ -657,6 +687,10 @@ class GeneralizedXdecoder(nn.Module):
                 panoptic_r = retry_if_cuda_oom(self.panoptic_inference)(mask_cls_result, mask_pred_result)
                 processed_results[-1]["panoptic_seg"] = panoptic_r
             
+            # LBK Visualization
+            # cmap = self.create_pascal_label_colormap()
+            # c = cmap[panoptic_r[0].cpu()]
+            
             # instance segmentation inference
             if self.instance_on:
                 if self.task_switch['bbox']:
@@ -670,6 +704,18 @@ class GeneralizedXdecoder(nn.Module):
         return processed_results
 
 
+    def create_pascal_label_colormap(self):
+        def bit_get(val, idx):
+            return (val >> idx) & 1
+        colormap = np.zeros((512, 3), dtype=int)
+        ind = np.arange(512, dtype=int)
+
+        for shift in reversed(list(range(8))):
+            for channel in range(3):
+                colormap[:, channel] |= bit_get(ind, channel) << shift
+            ind >>= 3
+
+        return colormap / 255
 
     def evaluate(self, batched_inputs):
         images = [x["image"].to(self.device) for x in batched_inputs]
@@ -725,6 +771,10 @@ class GeneralizedXdecoder(nn.Module):
             if self.panoptic_on:
                 panoptic_r = retry_if_cuda_oom(self.panoptic_inference)(mask_cls_result, mask_pred_result)
                 processed_results[-1]["panoptic_seg"] = panoptic_r
+            
+            # CuLLaVO: LBK Visualization
+            # cmap = self.create_pascal_label_colormap()
+            # c = cmap[panoptic_r[0].cpu()]
             
             # instance segmentation inference
             if self.instance_on:
@@ -826,93 +876,33 @@ class GeneralizedXdecoder(nn.Module):
             processed_results[-1]["pred_class"] = outputs['pred_logits'][idx,-1]
         return processed_results
 
-    def evaluate_grounding_baseline(self, batched_inputs, mode):
-        images = [x["image"].to(self.device) for x in batched_inputs]
-        images = [(x - self.pixel_mean) / self.pixel_std for x in images]
-        images = ImageList.from_tensors(images, self.size_divisibility)
-        img_bs = images.tensor.shape[0]
+
+    def evaluate_grounding_with_llm(self, batched_inputs):
         
-        targets = targets_grounding = queries_grounding = None
-        features = self.backbone(images.tensor)
-        outputs = self.sem_seg_head(features, target_queries=queries_grounding)
-
-        mask_pred_results = outputs["pred_masks"]
-        caption_pred_results = outputs["pred_captions"] if self.task_switch['caption'] else [None for i in range(len(mask_pred_results))]
-
-        # upsample masks
-        mask_pred_results = F.interpolate(
-            mask_pred_results,
-            size=(images.tensor.shape[-2], images.tensor.shape[-1]),
-            mode="bicubic",
-            align_corners=False,
-            antialias=True
-        )
-
-        processed_results = []
-        for mask_pred_result, caption_pred_result, input_per_image, image_size in zip(
-            mask_pred_results, caption_pred_results, batched_inputs, images.image_sizes
-        ):
-            height = input_per_image.get("height", image_size[0])
-            width = input_per_image.get("width", image_size[1])
-            processed_results.append({})
-
-            mask_pred_result = retry_if_cuda_oom(sem_seg_postprocess)(
-                mask_pred_result, image_size, height, width
-            )[:-1]
-
-            texts_all = input_per_image['groundings']['texts']
-            grd_masks = []
-            for texts in texts_all:
-                if mode == 'grounding_refcoco':
-                    self.sem_seg_head.predictor.lang_encoder.get_text_embeddings(texts, name='grounding', prompt=False, is_eval=True)
-                elif mode == 'grounding_phrasecut':
-                    self.sem_seg_head.predictor.lang_encoder.get_text_embeddings(texts, name='grounding', prompt=True, is_eval=False)
-                t_emb = getattr(self.sem_seg_head.predictor.lang_encoder, "{}_text_embeddings".format('grounding')).t()
-                v_emb = caption_pred_result[:-1]
-                v_emb = v_emb / (v_emb.norm(dim=-1, keepdim=True) + 1e-7)
-                vt_sim = v_emb @ t_emb
-                max_id = vt_sim.max(0)[1][0]
-                grd_masks += [mask_pred_result[max_id]]
-            processed_results[-1]['grounding_mask'] = torch.stack(grd_masks)
-
-        return processed_results
-
-    def evaluate_grounding(self, batched_inputs, mode):
+        # CuLLaVO: Custom Image
+        # from PIL import Image
+        # img1 = Image.open('pillow.jpg')
+        # img2 = Image.open('roof.jpg')
+        # img3 = Image.open('tent.jpg') 
+        # img4 = Image.open('teadybear.jpg')
+        # img5 = Image.open('tennis.jpg')
+        # img1_tensor = torch.from_numpy(np.array(img1)).permute(2,0,1)
+        # img2_tensor = torch.from_numpy(np.array(img2)).permute(2,0,1)
+        # img3_tensor = torch.from_numpy(np.array(img3)).permute(2,0,1)
+        # img4_tensor = torch.from_numpy(np.array(img4)).permute(2,0,1)
+        # img5_tensor = torch.from_numpy(np.array(img5)).permute(2,0,1)
+        # batched_inputs = []
+        # batched_inputs.append({'image': img1_tensor, 'groundings': {'texts': [["a rectangular cloth bag stuffed with feathers, foam rubber, or other soft materials"]]}})
+        # batched_inputs.append({'image': img2_tensor, 'groundings': {'texts': [["the structure forming the upper covering of a building"]]}})
+        # batched_inputs.append({'image': img3_tensor, 'groundings': {'texts': [["made of cloth, supported by one or more poles"]]}})
+        # batched_inputs.append({'image': img4_tensor, 'groundings': {'texts': [["a soft toy bear."]]}})
+        # batched_inputs.append({'image': img5_tensor, 'groundings': {'texts': [["a bat with a long handle attached to a round frame with a network of tight strings over it"]]}})
+        
         images = [x["image"].to(self.device) for x in batched_inputs]
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
         images = ImageList.from_tensors(images, self.size_divisibility)
 
         extra = {}
-        # mask_pred_results = []
-        # for idx, batch_per_image in enumerate(batched_inputs):
-        #     grd_texts = batch_per_image['groundings']['texts']
-        #     grd_masks = []
-        #     for anno_text in grd_texts:
-        #         gtext = self.sem_seg_head.predictor.lang_encoder.get_text_token_embeddings([anno_text[0]], name='grounding', token=False, norm=False)
-        #         token_emb = gtext['token_emb']
-        #         tokens = gtext['tokens']
-            
-        #         grd_emb = token_emb[0][tokens['attention_mask'].bool()[0]]
-        #         extra['grounding_tokens'] = grd_emb[:,None]
-
-        #         assert len(images.tensor) == 1, "grounding evaluation only support single batch size now"
-        #         features = self.backbone(images.tensor)
-        #         outputs = self.sem_seg_head(features, extra=extra, task='grounding_eval')
-                
-        #         pred_gmasks = outputs['pred_masks'][idx,self.num_queries:2*self.num_queries-1]
-        #         v_emb = outputs['pred_captions'][idx,self.num_queries:2*self.num_queries-1]
-        #         t_emb = grd_emb[-1:]
-
-        #         t_emb = t_emb / (t_emb.norm(dim=-1, keepdim=True) + 1e-7)
-        #         v_emb = v_emb / (v_emb.norm(dim=-1, keepdim=True) + 1e-7)            
-
-        #         temperature = self.sem_seg_head.predictor.lang_encoder.logit_scale
-        #         out_prob = vl_similarity(v_emb, t_emb, temperature=temperature)
-                
-        #         matched_id = out_prob.max(0)[1]
-        #         grd_masks += [pred_gmasks[matched_id,:,:]]
-        #     mask_pred_results += [torch.cat(grd_masks)]
-
         # comment for multi object inference.
         mask_pred_results = []
         for idx, batch_per_image in enumerate(batched_inputs):
@@ -962,6 +952,80 @@ class GeneralizedXdecoder(nn.Module):
             mask_pred_result = retry_if_cuda_oom(sem_seg_postprocess)(
                 mask_pred_result, image_size, height, width
             )
+            
+            # CuLLaVO: LBK Visualization
+            # a = (mask_pred_result>0).float().permute(1,2,0).cpu().numpy()
+            # b = input_per_image["image"].flip(0).permute(1,2,0).cpu().numpy()
+            
+            processed_results[-1]['grounding_mask'] = mask_pred_result
+
+            # compute bbox
+            # bbox = BitMasks(mask_pred_result > 0).get_bounding_boxes()
+            # bbox = BoxMode.convert(bbox.tensor, BoxMode.XYXY_ABS, BoxMode.XYWH_ABS)
+            # processed_results[-1]['grounding_box'] = bbox
+
+        return processed_results
+
+    def evaluate_grounding(self, batched_inputs):
+        images = [x["image"].to(self.device) for x in batched_inputs]
+        images = [(x - self.pixel_mean) / self.pixel_std for x in images]
+        images = ImageList.from_tensors(images, self.size_divisibility)
+
+        extra = {}
+        # comment for multi object inference.
+        mask_pred_results = []
+        for idx, batch_per_image in enumerate(batched_inputs):
+            grd_texts = batch_per_image['groundings']['texts']
+            grd_texts = [x[0] for x in grd_texts]
+
+            gtext = self.sem_seg_head.predictor.lang_encoder.get_text_token_embeddings(grd_texts, name='grounding', token=False, norm=False)
+            token_emb = gtext['token_emb']
+            tokens = gtext['tokens']
+            query_emb = token_emb[tokens['attention_mask'].bool()]
+            extra['grounding_tokens'] = query_emb[:,None]
+
+            features = self.backbone(images.tensor)
+            outputs = self.sem_seg_head(features, extra=extra, task='grounding_eval')
+
+            pred_gmasks = outputs['pred_masks'][idx,self.num_queries:2*self.num_queries-1]
+            v_emb = outputs['pred_captions'][idx,self.num_queries:2*self.num_queries-1]
+            t_emb = gtext['class_emb']
+
+            t_emb = t_emb / (t_emb.norm(dim=-1, keepdim=True) + 1e-7)
+            v_emb = v_emb / (v_emb.norm(dim=-1, keepdim=True) + 1e-7)            
+
+            temperature = self.sem_seg_head.predictor.lang_encoder.logit_scale
+            out_prob = vl_similarity(v_emb, t_emb, temperature=temperature)
+            
+            matched_id = out_prob.max(0)[1]
+            mask_pred_results += [pred_gmasks[matched_id,:,:]]
+
+        for i in range(len(mask_pred_results)):
+            # upsample masks
+            mask_pred_results[i] = F.interpolate(
+                mask_pred_results[i][None,],
+                size=(images.tensor.shape[-2], images.tensor.shape[-1]),
+                mode="bicubic",
+                align_corners=False,
+                antialias=True
+            )[0]
+
+        processed_results = []
+        for mask_pred_result, input_per_image, image_size in zip(
+            mask_pred_results, batched_inputs, images.image_sizes
+        ):
+            height = input_per_image.get("height", image_size[0])
+            width = input_per_image.get("width", image_size[1])
+            processed_results.append({})
+
+            mask_pred_result = retry_if_cuda_oom(sem_seg_postprocess)(
+                mask_pred_result, image_size, height, width
+            )
+            
+            # CuLLaVO: LBK Visualization
+            # a = (mask_pred_result>0).float().permute(1,2,0).cpu().numpy()
+            # b = input_per_image["image"].flip(0).permute(1,2,0).cpu().numpy()
+            
             processed_results[-1]['grounding_mask'] = mask_pred_result
 
             # compute bbox
@@ -1068,6 +1132,7 @@ class GeneralizedXdecoder(nn.Module):
                 target_dict['grounding_class_embs'] = class_emb
                 target_dict['grounding_hash'] = grd_hash
                 target_dict['grounding_task'] = grd_task
+                target_dict['cullavo_grounding'] = np.array(grd_texts)[selected_mask] # CuLLaVO
 
             new_targets.append(target_dict)
         return new_targets

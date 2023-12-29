@@ -45,6 +45,7 @@ from .evaluation import (InstanceSegEvaluator,
                          COCOPanopticEvaluator,
                          GroundingEvaluator,
                          InteractiveEvaluator,
+                         VQAEvaluator
 )
 from modeling.utils import configurable
 from utils.distributed import get_world_size
@@ -255,7 +256,7 @@ def _train_loader_from_config(cfg, dataset_name, mapper, *, dataset=None, sample
     if sampler is None:
         sampler_name = cfg_dataloader['SAMPLER_TRAIN']
         logger = logging.getLogger(__name__)
-        logger.info("Using training sampler {}".format(sampler_name))
+        # logger.info("Using training sampler {}".format(sampler_name))
         sampler = TrainingSampler(len(dataset))
 
     return {
@@ -392,6 +393,15 @@ def get_config_from_name(cfg, dataset_name):
     elif 'sam' in dataset_name:
         cfg.update(cfg['SAM'])
         return cfg
+    elif 'vqa' in dataset_name:
+        cfg.update(cfg['VQA'])
+        return cfg
+    elif 'instruction' in dataset_name:
+        cfg.update(cfg['INSTRUCT'])
+        return cfg
+    elif 'instp' in dataset_name:
+        cfg.update(cfg['INSTP'])
+        return cfg
     else:
         assert False, "dataset not support."
 
@@ -417,6 +427,12 @@ def build_eval_dataloader(cfg, ):
             mapper = SunRGBDSegDatasetMapper(cfg, False)
         elif 'refcoco' in dataset_name:
             mapper = RefCOCODatasetMapper(cfg, False)
+        elif dataset_name in ["vqav2_test", "vqav2_test-dev", "vqav2_val"]:
+            mapper = VQADatasetMapper(cfg, False, dataset_name)
+        elif dataset_name in ["instruction_val", "instruction_captioning_val", "instruction_val2017", "instruction_captioning_val2017"]:
+            mapper = InstructionDatasetMapper(cfg, False, dataset_name)
+        elif dataset_name in ["instp_val", "instp_captioning_val", "instp_val2017", "instp_captioning_val2017"]:
+            mapper = InstPreDatasetMapper(cfg, False, dataset_name)
         else:
             mapper = None
         dataloaders += [build_detection_test_loader(cfg, dataset_name, mapper=mapper)]
@@ -459,6 +475,12 @@ def build_train_dataloader(cfg, ):
         elif mapper_name == "coco_interactive":
             mapper = COCOPanopticInteractiveDatasetMapper(cfg, True)
             loaders['coco'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+        elif mapper_name == "instruction_train":
+            mapper = InstructionDatasetMapper(cfg, True, dataset_name)
+            loaders['instruction'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+        elif mapper_name == "instp_train":
+            mapper = InstPreDatasetMapper(cfg, True, dataset_name)
+            loaders['instp'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         else:
             mapper = None
             loaders[dataset_name] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
@@ -555,6 +577,9 @@ def build_evaluator(cfg, dataset_name, output_folder=None):
         evaluator_list.append(CaptioningEvaluator(dataset_name, output_folder, MetadataCatalog.get(dataset_name).gt_json))
     if evaluator_type in ["grounding_refcoco", "grounding_phrasecut", "grounding_spatial", "grounding_entity"]:
         evaluator_list.append(GroundingEvaluator(dataset_name))
+    # VQAv2
+    if evaluator_type == "vqa":
+        evaluator_list.append(VQAEvaluator(dataset_name, output_dir=output_folder))
     # Interactive
     if evaluator_type in ["interactive", "interactive_grounding"]:
         evaluator_list.append(InteractiveEvaluator(dataset_name, output_dir=output_folder, max_clicks=cfg['STROKE_SAMPLER']['EVAL']['MAX_ITER'], iou_iter=cfg['STROKE_SAMPLER']['EVAL']['IOU_ITER']))

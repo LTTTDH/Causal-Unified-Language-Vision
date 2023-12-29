@@ -139,11 +139,11 @@ class XDecoder(nn.Module):
             self.bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)
 
         # Caption Project and query
-        if task_switch['captioning']:
-            self.caping_embed = nn.Parameter(torch.empty(hidden_dim, dim_proj))
-            trunc_normal_(self.caping_embed, std=.02)
-            self.pos_embed_caping = nn.Embedding(contxt_len, hidden_dim)
-            self.captioning_step = captioning_step
+        # if task_switch['captioning']: # CuLLaVO
+        self.caping_embed = nn.Parameter(torch.empty(hidden_dim, dim_proj))
+        trunc_normal_(self.caping_embed, std=.02)
+        self.pos_embed_caping = nn.Embedding(contxt_len, hidden_dim)
+        self.captioning_step = captioning_step
 
         # register self_attn_mask to avoid information leakage, it includes interaction between object query, class query and caping query
         self_attn_mask = torch.zeros((1, num_queries + contxt_len, num_queries + contxt_len)).bool()
@@ -190,7 +190,7 @@ class XDecoder(nn.Module):
 
         return ret
 
-    def forward(self, x, mask_features, mask=None, target_queries=None, target_vlp=None, task='seg', extra={}):
+    def forward(self, x, mask_features, mask=None, target_queries=None, target_vlp=None, task='seg', extra={}, is_train=False):
         if task == 'captioning_infer':
             return self.forward_captioning(x, mask_features, mask=mask, target_queries=target_queries, target_vlp=target_vlp, task=task, extra=extra)
         # x is a list of multi-scale feature
@@ -221,10 +221,10 @@ class XDecoder(nn.Module):
         predictions_bbox = []
         predictions_caption = []
         predictions_captioning = []
-        predictions_outputs_for_cullavo = [] # CuLLAVO
+        predictions_outputs_for_cullavo = [] # CuLLaVO
         
         self_tgt_mask = None
-        if self.training and task == 'vlp' and self.task_switch['captioning']:
+        if is_train and task == 'vlp' and self.task_switch['captioning']:
             # output = torch.cat((output, self.query_feat_caping.weight.unsqueeze(1).repeat(1, bs, 1)), dim=0) # concat object query, class token and caption token.
             caping_lang_embed = torch.cat([caption['caption_tokens'] for caption in target_vlp], dim=0).transpose(0, 1) # language output
             _caping_lang_embed = caping_lang_embed.detach().clone()
@@ -232,7 +232,7 @@ class XDecoder(nn.Module):
             caping_lang_embed += self.pos_embed_caping.weight.unsqueeze(1).repeat(1, bs, 1)
             query_embed = torch.cat((query_embed, caping_lang_embed), dim=0) # may not add at the beginning.
             self_tgt_mask = self.self_attn_mask.repeat(output.shape[1]*self.num_heads, 1, 1)
-        elif (((task == 'seg') or (task == 'grounding_eval')) and self.task_switch['grounding']):
+        elif (((is_train and task == 'seg') or (task == 'grounding_eval')) and self.task_switch['grounding']):
             self_tgt_mask = self.self_attn_mask[:,:self.num_queries,:self.num_queries].repeat(output.shape[1]*self.num_heads, 1, 1)
             grounding_tokens = extra['grounding_tokens']
             _grounding_tokens = grounding_tokens.detach().clone()
@@ -246,24 +246,24 @@ class XDecoder(nn.Module):
         else:
             self_tgt_mask = self.self_attn_mask[:,:self.num_queries,:self.num_queries].repeat(output.shape[1]*self.num_heads, 1, 1)
 
-        # CuLLAVO
+        # CuLLaVO
         # attn_mask_visualize = (~self.self_attn_mask).permute(1,2,0).cpu().numpy()
 
         # prediction heads on learnable query features
-        results = self.forward_prediction_heads(output, mask_features, attn_mask_target_size=size_list[0], task=task)
+        results = self.forward_prediction_heads(output, mask_features, attn_mask_target_size=size_list[0], task=task, is_train=is_train)
         attn_mask = results["attn_mask"]
         predictions_class.append(results["outputs_class"])
         predictions_mask.append(results["outputs_mask"])
         predictions_bbox.append(results["outputs_bbox"])
         predictions_caption.append(results["outputs_caption"])
         predictions_captioning.append(results["outputs_captionting"]) 
-        predictions_outputs_for_cullavo.append(output) # CuLLAVO
+        predictions_outputs_for_cullavo.append(output) # CuLLaVO
         
         for i in range(self.num_layers):
             level_index = i % self.num_feature_levels
             attn_mask[torch.where(attn_mask.sum(-1) == attn_mask.shape[-1])] = False
 
-            if self.training and task == 'vlp' and self.task_switch['captioning']:
+            if is_train and task == 'vlp' and self.task_switch['captioning']:
                 attn_mask = torch.cat((attn_mask, torch.zeros_like(attn_mask[:, :self.contxt_len, :])), dim=1)
             # attention: cross-attention first
             output, avg_attn = self.transformer_cross_attention_layers[i](
@@ -273,7 +273,7 @@ class XDecoder(nn.Module):
                 pos=pos[level_index], query_pos=query_embed
             )
 
-            if (((task == 'seg') or (task == 'grounding_eval')) and self.task_switch['grounding']):
+            if (((is_train and task == 'seg') or (task == 'grounding_eval')) and self.task_switch['grounding']):
                 output = torch.cat((output, _grounding_tokens), dim=0)
                 query_embed = torch.cat((query_embed, grounding_tokens), dim=0)
 
@@ -288,19 +288,19 @@ class XDecoder(nn.Module):
                 output
             )
 
-            if ((task == 'seg') or (task == 'grounding_eval')) and self.task_switch['grounding']:
+            if ((is_train and task == 'seg') or (task == 'grounding_eval')) and self.task_switch['grounding']:
                 _grounding_tokens = output[-len(_grounding_tokens):]
                 output = output[:-len(_grounding_tokens)]
                 query_embed = query_embed[:-len(_grounding_tokens)]
 
-            results = self.forward_prediction_heads(output, mask_features, attn_mask_target_size=size_list[(i + 1) % self.num_feature_levels], layer_id=i, task=task)
+            results = self.forward_prediction_heads(output, mask_features, attn_mask_target_size=size_list[(i + 1) % self.num_feature_levels], layer_id=i, task=task, is_train=is_train)
             attn_mask = results["attn_mask"]
             predictions_class.append(results["outputs_class"])
             predictions_mask.append(results["outputs_mask"])
             predictions_bbox.append(results["outputs_bbox"])
             predictions_caption.append(results["outputs_caption"])
             predictions_captioning.append(results["outputs_captionting"])
-            predictions_outputs_for_cullavo.append(output) # CuLLAVO
+            predictions_outputs_for_cullavo.append(output) # CuLLaVO
 
         assert len(predictions_class) == self.num_layers + 1
         if task == 'vlp':
@@ -420,15 +420,15 @@ class XDecoder(nn.Module):
         return out
 
 
-    def forward_prediction_heads(self, output, mask_features, attn_mask_target_size, layer_id=-1, task='seg'):
+    def forward_prediction_heads(self, output, mask_features, attn_mask_target_size, layer_id=-1, task='seg', is_train=False):
         decoder_output = self.decoder_norm(output)
         decoder_output = decoder_output.transpose(0, 1)
 
         # extract image captioning token from decoder output.
-        if self.task_switch['captioning'] and (task == 'vlp' or task == 'captioning_infer'):
-            outputs_captionting = decoder_output[:,self.num_queries:] @ self.caping_embed
-        else:
-            outputs_captionting = None
+        # if self.task_switch['captioning'] and (task == 'vlp' or task == 'captioning_infer'):
+        outputs_captionting = decoder_output[:,self.num_queries:] @ self.caping_embed # CuLLaVO
+        # else:
+        # outputs_captionting = None
 
         # recompute class token output.
         norm_decoder_output = decoder_output / (decoder_output.norm(dim=-1, keepdim=True) + 1e-7)
@@ -438,7 +438,7 @@ class XDecoder(nn.Module):
         sim = (cls_token @ obj_token.transpose(1,2)).softmax(-1)[:,0,:,None] # TODO include class token.
         cls_token = (sim * decoder_output[:,:self.num_queries-1]).sum(dim=1, keepdim=True)
 
-        if (((task == 'seg') or (task == 'grounding_eval')) and self.task_switch['grounding']):
+        if (((is_train and task == 'seg') or (task == 'grounding_eval')) and self.task_switch['grounding']):
             decoder_output = torch.cat((decoder_output[:,:self.num_queries-1], cls_token, decoder_output[:,self.num_queries:2*self.num_queries-1]), dim=1)
         else:
             decoder_output = torch.cat((decoder_output[:,:self.num_queries-1], cls_token), dim=1)
@@ -471,9 +471,7 @@ class XDecoder(nn.Module):
         if self.task_switch['bbox']:
             outputs_bbox = self.bbox_embed(decoder_output)
 
-        outputs_caption = None
-        if self.task_switch['caption']:
-            outputs_caption = class_embed
+        outputs_caption = class_embed
             
 
         results = {

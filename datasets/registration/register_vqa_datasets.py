@@ -11,31 +11,19 @@ from detectron2.data import DatasetCatalog, MetadataCatalog
 import pyarrow as pa
 
 _PREDEFINED_SPLITS_PRETRAIN = {
-    # filt coco2017 val
-    # "vlp_train": ["filtcoco2017val_caption_karpathy_train.arrow", "filtcoco2017val_caption_karpathy_val.arrow", "filtcoco2017val_caption_karpathy_restval.arrow"] + ["code224_vg.arrow"] + [f"code224_sbu_{i}.arrow" for i in range(9)] + [f"code224_conceptual_caption_train_{i}.arrow" for i in range(31)],
-    # "vlp_val": ["coco_caption_karpathy_test.arrow"],
-    # "vlp_captioning_val": ["coco_caption_karpathy_test.arrow"],
-    # "vlp_val2017": ["coco_caption_karpathy_val2017.arrow"],
-    # "vlp_captioning_val2017": ["coco_caption_karpathy_val2017.arrow"],
-    # filt coco2017 and refcocog umd val
-    # "vlp_train": ["filtrefval2017_coco_caption_karpathy_restval.arrow", "filtrefval2017_coco_caption_karpathy_train.arrow", "filtrefval2017_coco_caption_karpathy_val.arrow"] + ["code224_vg.arrow"] + [f"code224_sbu_{i}.arrow" for i in range(9)] + [f"code224_conceptual_caption_train_{i}.arrow" for i in range(31)],
-    "vlp_val": ["coco_caption_karpathy_test.arrow"],
-    "vlp_captioning_val": ["coco_caption_karpathy_test.arrow"],
-    "vlp_val2017": ["coco_caption_karpathy_val2017.arrow"],
-    "vlp_captioning_val2017": ["coco_caption_karpathy_val2017.arrow"],
-    # the following is for local testing
-    # "vlp_train": ["coco_caption_karpathy_test.arrow"],
-    # "vlp_val": ["coco_caption_karpathy_test.arrow"],
-    # "vlp_captioning_val": ["coco_caption_karpathy_test.arrow"],
+    "vqav2_train": ["vqav2_train.arrow"],
+    "vqav2_test": ["vqav2_test.arrow"],
+    "vqav2_test-dev": ["vqav2_test-dev.arrow"],
+    "vqav2_val": ["vqav2_val.arrow"],
 }
 
 def get_metadata(name):
-    if name in ['vlp_captioning_val', 'vlp_captioning_val2017']:
+    if name in ['vqav2_train', 'vqav2_test', 'vqa2_test-dev', 'vqa2_val']:
         return {'gt_json': os.path.join(_coco_root, 'coco_caption/annotations/captions_val2014.json')}
     else:
         return {}
 
-evaluator_mapper = {'vlp_val': 'retrieval', 'vlp_train': 'retrieval', 'vlp_captioning_val': 'captioning', 'vlp_val2017': 'retrieval', 'vlp_captioning_val2017': 'captioning'}
+evaluator_mapper = {'vqav2_train': 'vqa', 'vqav2_test': 'vqa', 'vqav2_test-dev': 'vqa', 'vqav2_val': 'vqa'}
 def load_pretrain_arrows(root, arrow_paths):
     """
     Args:
@@ -62,28 +50,35 @@ def load_pretrain_data(arrow_root, meta, name, pretrain_arrows):
         arr_len = len(arr)
         cur_id = 0
         for i in range(arr_len):
-            captions = arr['caption'][i].as_py()
+            captions = arr['questions'][i].as_py()
+            labels = arr['answers'][i].as_py()
             image_id = arr['image_id'][i].as_py()
-            if not isinstance(image_id, int):
-                image_id = int(image_id.split('_')[-1].split('.')[0])
+            question_ids = arr['question_id'][i].as_py()
+            splits = arr['split'][i].as_py()
+
             if 'val' in name:
-                ret.append( {
-                    "image_id": image_id,
-                    "captions": captions,
-                    "arr_id": arr_id,
-                    "cur_id": cur_id,
-                })
-            else:
-                for caption in captions:
+                for j, caption in enumerate(captions):
                     ret.append( {
                         "image_id": image_id,
                         "captions": [caption],
+                        "labels": [labels[j]],
                         "arr_id": arr_id,
                         "cur_id": cur_id,
+                        "question_ids": [question_ids[j]],
+                        "split": splits
                     })
+            else:
+                ret.append( {
+                    "image_id": image_id,
+                    "captions": captions,
+                    "labels": labels,
+                    "arr_id": arr_id,
+                    "cur_id": cur_id,
+                    "question_ids": question_ids,
+                    "split": splits
+                })
             cur_id += 1
             image_id += 1
-
         arr_id += 1
 
     assert len(ret), f"No images found in pretraining"
@@ -93,7 +88,6 @@ def load_pretrain_data(arrow_root, meta, name, pretrain_arrows):
 def register_pretrain(
     name, metadata, arrow_root, arrow_paths
 ):
-    # the name is "coco_2017_train/val_caption_only"
     semantic_name = name
     arrow_root = os.path.join(arrow_root, 'pretrain_arrows_code224')
     if os.path.exists(arrow_root):
@@ -110,7 +104,7 @@ def register_pretrain(
         )
     else:
         logger = logging.getLogger(__name__)
-        logger.warning("WARNING: Cannot find VLPreDataset. Make sure datasets are accessible if you want to use them for training or evaluation.")        
+        logger.warning("WARNING: Cannot find VQAv2Dataset. Make sure datasets are accessible if you want to use them for training or evaluation.")        
 
 def register_all_pretrain(root):
     for (

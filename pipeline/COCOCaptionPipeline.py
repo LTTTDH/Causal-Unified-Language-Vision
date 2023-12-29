@@ -27,15 +27,16 @@ from modeling.utils import get_class_names
 from modeling.BaseModel import BaseModel
 from datasets import build_evaluator, build_eval_dataloader, build_train_dataloader
 from utils.distributed import is_main_process
-from utils.constants import COCO_PANOPTIC_CLASSES
+from utils.constants import COCO_SEMANTIC_CLASSES
 from trainer.utils.misc import move_batch_to_device, cast_batch_to_half
 
 from .utils.misc import hook_metadata, hook_switcher, hook_opt
+import torch.distributed as dist
 
 logger = logging.getLogger(__name__)
 
 
-class XDecoderPipeline:
+class COCOCaptionPipeline:
     def __init__(self, opt):
         self._opt = opt
 
@@ -64,7 +65,9 @@ class XDecoderPipeline:
                 dataloaders = self.valid_loader
             idx = 0 if dataset_label=='dev' else self._opt['DATASETS']['TEST'].index(dataset_label)
             dataloader = dataloaders[idx]
-            self.evaluator = build_evaluator(self._opt, self._opt['DATASETS']['TEST'][idx], self._opt['SAVE_DIR'])
+            from copy import copy
+            memory_evaluator = build_evaluator(self._opt, self._opt['DATASETS']['TEST'][idx], self._opt['SAVE_DIR'])
+            self.evaluator = [copy(memory_evaluator) for _ in range(len(COCO_SEMANTIC_CLASSES))]
         else:
             if not hasattr(self, 'train_loader'):
                 dataloader = build_train_dataloader(self._opt)
@@ -106,6 +109,12 @@ class XDecoderPipeline:
         trainer.update_model(model_name='default')
         return loss_info, sample_size_info, extra_info
 
+    @staticmethod
+    def all_gather(data, world_size):
+        output = [None for _ in range(world_size)]
+        dist.all_gather_object(output, data, group=None)
+        return output
+
     def evaluate_model(
         self,
         trainer: DefaultTrainer,
@@ -117,10 +126,33 @@ class XDecoderPipeline:
         scores = {}
         summary = {}
 
+        # CLIP
+        import torch.nn.functional as F
+        from transformers import CLIPProcessor, CLIPModel
+        clip_model = CLIPModel.from_pretrained("openai/clip-vit-large-patch14")
+        clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
+        clip_model = clip_model.cuda()
+        
+        # CLIP Text
+        text_inputs = clip_processor(text=[f"a photo of {cl}" for cl in COCO_SEMANTIC_CLASSES], return_tensors="pt", padding=True)
+        text = clip_model.text_model(**{k:v.cuda()for k, v in text_inputs.items()})[1]
+        text = clip_model.text_projection(text)
+        norm_text = F.normalize(text, dim=1)
+        
+        # n_image_list = []
+        n_image_list = [0 for _ in range(len(COCO_SEMANTIC_CLASSES))]
+        
+        # CSV
+        if self._opt['rank'] == 0:
+            import csv
+            with open("problem_experiment/coco_caption.csv", "w") as f:
+                csv_writer = csv.writer(f)
+                csv_writer.writerow(['CLASS', 'Bleu_1', 'Bleu_2', 'Bleu_3', 'Bleu_4', 'METEOR', 'ROUGE_L', 'CIDEr', 'n_image'])
+        
         for dataset_label in dataset_names:
             torch.cuda.empty_cache()
             eval_batch_gen = self.get_dataloaders(trainer, dataset_label, is_evaluation=True)
-            self.evaluator.reset()
+            for x in self.evaluator: x.reset()
             with torch.no_grad():
                 names = get_class_names(dataset_label)
                 model.model.metadata = MetadataCatalog.get(dataset_label)
@@ -130,67 +162,61 @@ class XDecoderPipeline:
                     model.model.sem_seg_head.num_classes = len(names) - 1
                 model.model.sem_seg_head.predictor.lang_encoder.get_text_embeddings(names, is_eval=True)
                 hook_switcher(model, dataset_label)
-                total = len(eval_batch_gen)
-                num_warmup = min(5, total - 1)
-                start_time = time.perf_counter()
-                total_data_time = 0
-                total_compute_time = 0
-                total_eval_time = 0
-                start_data_time = time.perf_counter()
-                
-                prog_bar = tqdm(enumerate(eval_batch_gen), total=total, leave=True)
+                prog_bar = tqdm(enumerate(eval_batch_gen), total=len(eval_batch_gen), leave=True)
                 for idx, batch in prog_bar:
-                    total_data_time += time.perf_counter() - start_data_time
-                    if idx == num_warmup:
-                        start_time = time.perf_counter()
-                        total_data_time = 0
-                        total_compute_time = 0
-                        total_eval_time = 0
-
-                    start_compute_time = time.perf_counter()
                     batch = move_batch_to_device(batch, self._opt['device'])
                     if self._opt['FP16']:
                         # in FP16 mode, DeepSpeed casts the model to FP16, so the input needs to be manually casted to FP16
                         batch = cast_batch_to_half(batch)
-
+                                                
+                    # Visualization
+                    # a = batch[7]['image'].flip(0).permute(1,2,0).cpu().numpy()
+                    
+                    # CLIP Vision
+                    vision_inputs = clip_processor(images=torch.stack([b['image'].flip(0) for b in batch]), return_tensors="pt", padding=True)
+                    vision_embed = clip_model.vision_model(**{k:v.cuda()for k, v in vision_inputs.items()})[1]
+                    vision_embed = clip_model.visual_projection(vision_embed)
+                    norm_vision_embed = F.normalize(vision_embed, dim=1)
+                    
+                    # CLIP SCORE
+                    score = norm_vision_embed @ norm_text.T
+                    clip_index = score.topk(k=1, dim=1)[1]
+                    
+                    # Model Prediction
                     outputs = model(batch, mode=eval_type)
-                    if torch.cuda.is_available():
-                        torch.cuda.synchronize()
+                    
+                    # Captioning evaluate process
+                    for i in range(clip_index.shape[0]):
+                        for j in range(clip_index.shape[1]):
+                            self.evaluator[clip_index[i][j]].process([batch[i]], [outputs[i]])
+                            n_image_list[clip_index[i][j]] += 1
+                            
+                model.model.sem_seg_head.predictor.lang_encoder.reset_text_embeddings()
 
-                    total_compute_time += time.perf_counter() - start_compute_time
-                    start_eval_time = time.perf_counter()
+        # DDP communication
+        if self._opt['world_size'] >1:
+            dist.barrier()
+            new_n_image_list = []
+            for x in n_image_list:
+                new_n_image_list.append(sum(self.all_gather(x, self._opt['world_size'])))
+            n_image_list = new_n_image_list        
 
-                    self.evaluator.process(batch, outputs)
-                    total_eval_time += time.perf_counter() - start_eval_time
+        # Result Write on CSV
+        if self._opt['world_size'] >1: dist.barrier()
+        for i, x in enumerate(self.evaluator):
+            if n_image_list[i]==0:
+                if self._opt['rank'] == 0:
+                    with open("problem_experiment/coco_caption.csv", "a+", newline='') as f:
+                        csv_writer = csv.writer(f)
+                        csv_writer.writerow([f'{COCO_SEMANTIC_CLASSES[i]}'] + ['NaN']*7 + [n_image_list[i]])
+            else:
+                results = x.evaluate()
+                if self._opt['rank'] == 0:
+                    with open("problem_experiment/coco_caption.csv", "a+", newline='') as f:
+                        csv_writer = csv.writer(f)
+                        csv_writer.writerow([f'{COCO_SEMANTIC_CLASSES[i]}'] + [v for v in results.values()] + [n_image_list[i]])
+            if self._opt['world_size'] >1: dist.barrier()
 
-                    # iters_after_start = idx + 1 - num_warmup * int(idx >= num_warmup)
-                    # data_seconds_per_iter = total_data_time / iters_after_start
-                    # compute_seconds_per_iter = total_compute_time / iters_after_start
-                    # eval_seconds_per_iter = total_eval_time / iters_after_start
-                    # total_seconds_per_iter = (time.perf_counter() - start_time) / iters_after_start
-
-                    # if is_main_process()  and (idx >= num_warmup * 2 or compute_seconds_per_iter > 5):
-                    #     eta = datetime.timedelta(seconds=int(total_seconds_per_iter * (total - idx - 1)))
-                    #     log_every_n_seconds(
-                    #         logging.INFO,
-                    #         (
-                    #             f"Task {dataset_label}. "
-                    #             f"Inference done {idx + 1}/{total}. "
-                    #             f"Dataloading: {data_seconds_per_iter:.4f} s/iter. "
-                    #             f"Inference: {compute_seconds_per_iter:.4f} s/iter. "
-                    #             f"Eval: {eval_seconds_per_iter:.4f} s/iter. "
-                    #             f"Total: {total_seconds_per_iter:.4f} s/iter. "
-                    #             f"ETA={eta}"
-                    #         ),
-                    #         n=5,
-                    #     )
-                    # start_data_time = time.perf_counter()
-
-            results = self.evaluator.evaluate()
-            model.model.sem_seg_head.predictor.lang_encoder.reset_text_embeddings()
-
-            if is_main_process():
-                scores["{}/{}".format(dataset_label, eval_type)] = results
 
         # set back to training stat.
         model.model.sem_seg_head.num_classes = self._opt['MODEL']['ENCODER']['NUM_CLASSES']

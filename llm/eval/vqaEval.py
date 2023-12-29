@@ -68,7 +68,8 @@ class VQAEval:
 
 	def evaluate(self, quesIds=None):
 		if quesIds == None:
-			quesIds = [quesId for quesId in self.params['question_id']]
+			# quesIds = [quesId for quesId in self.params['question_id']]
+			quesIds = [k for k in self.vqaRes.qa.keys()] # CuLLaVO
 		gts = {}
 		res = {}
 		for quesId in quesIds:

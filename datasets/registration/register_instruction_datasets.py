@@ -12,30 +12,22 @@ import pyarrow as pa
 
 _PREDEFINED_SPLITS_PRETRAIN = {
     # filt coco2017 val
-    # "vlp_train": ["filtcoco2017val_caption_karpathy_train.arrow", "filtcoco2017val_caption_karpathy_val.arrow", "filtcoco2017val_caption_karpathy_restval.arrow"] + ["code224_vg.arrow"] + [f"code224_sbu_{i}.arrow" for i in range(9)] + [f"code224_conceptual_caption_train_{i}.arrow" for i in range(31)],
-    # "vlp_val": ["coco_caption_karpathy_test.arrow"],
-    # "vlp_captioning_val": ["coco_caption_karpathy_test.arrow"],
-    # "vlp_val2017": ["coco_caption_karpathy_val2017.arrow"],
-    # "vlp_captioning_val2017": ["coco_caption_karpathy_val2017.arrow"],
-    # filt coco2017 and refcocog umd val
-    # "vlp_train": ["filtrefval2017_coco_caption_karpathy_restval.arrow", "filtrefval2017_coco_caption_karpathy_train.arrow", "filtrefval2017_coco_caption_karpathy_val.arrow"] + ["code224_vg.arrow"] + [f"code224_sbu_{i}.arrow" for i in range(9)] + [f"code224_conceptual_caption_train_{i}.arrow" for i in range(31)],
-    "vlp_val": ["coco_caption_karpathy_test.arrow"],
-    "vlp_captioning_val": ["coco_caption_karpathy_test.arrow"],
-    "vlp_val2017": ["coco_caption_karpathy_val2017.arrow"],
-    "vlp_captioning_val2017": ["coco_caption_karpathy_val2017.arrow"],
+    # "inst_train": ["instruction_instruct150k.arrow"]
+    "instruction_train": ["instruction_coco2017.arrow", "instruction_gqa.arrow", "instruction_ocr_vqa.arrow", "instruction_textvqa.arrow", "instruction_vg.arrow"],
+    "instruction_val": ["coco_caption_karpathy_test.arrow"],
+    "instruction_captioning_val": ["coco_caption_karpathy_test.arrow"],
+    "instruction_val2017": ["coco_caption_karpathy_val2017.arrow"],
+    "instruction_captioning_val2017": ["coco_caption_karpathy_val2017.arrow"],
     # the following is for local testing
-    # "vlp_train": ["coco_caption_karpathy_test.arrow"],
-    # "vlp_val": ["coco_caption_karpathy_test.arrow"],
-    # "vlp_captioning_val": ["coco_caption_karpathy_test.arrow"],
 }
 
 def get_metadata(name):
-    if name in ['vlp_captioning_val', 'vlp_captioning_val2017']:
-        return {'gt_json': os.path.join(_coco_root, 'coco_caption/annotations/captions_val2014.json')}
+    if name in ['instruction_captioning_val', 'instruction_captioning_val2017']:
+        return {'gt_json': os.path.join(_coco_root, 'coco/annotations/captions_val2014.json')}
     else:
         return {}
 
-evaluator_mapper = {'vlp_val': 'retrieval', 'vlp_train': 'retrieval', 'vlp_captioning_val': 'captioning', 'vlp_val2017': 'retrieval', 'vlp_captioning_val2017': 'captioning'}
+evaluator_mapper = {'instruction_val': 'retrieval', 'instruction_train': 'retrieval', 'instruction_captioning_val': 'captioning', 'instruction_val2017': 'retrieval', 'instruction_captioning_val2017': 'captioning'}
 def load_pretrain_arrows(root, arrow_paths):
     """
     Args:
@@ -65,7 +57,8 @@ def load_pretrain_data(arrow_root, meta, name, pretrain_arrows):
             captions = arr['caption'][i].as_py()
             image_id = arr['image_id'][i].as_py()
             if not isinstance(image_id, int):
-                image_id = int(image_id.split('_')[-1].split('.')[0])
+                image_id = int(image_id.split('/')[-1].split('.')[0])
+
             if 'val' in name:
                 ret.append( {
                     "image_id": image_id,
@@ -74,13 +67,12 @@ def load_pretrain_data(arrow_root, meta, name, pretrain_arrows):
                     "cur_id": cur_id,
                 })
             else:
-                for caption in captions:
-                    ret.append( {
-                        "image_id": image_id,
-                        "captions": [caption],
-                        "arr_id": arr_id,
-                        "cur_id": cur_id,
-                    })
+                ret.append( {
+                    "image_id": image_id,
+                    "captions": [captions],
+                    "arr_id": arr_id,
+                    "cur_id": cur_id,
+                })
             cur_id += 1
             image_id += 1
 
@@ -95,7 +87,7 @@ def register_pretrain(
 ):
     # the name is "coco_2017_train/val_caption_only"
     semantic_name = name
-    arrow_root = os.path.join(arrow_root, 'pretrain_arrows_code224')
+    arrow_root = os.path.join(arrow_root, 'llava_dataset')
     if os.path.exists(arrow_root):
         pretrain_arrows = load_pretrain_arrows(arrow_root, arrow_paths)
         DatasetCatalog.register(
@@ -110,7 +102,7 @@ def register_pretrain(
         )
     else:
         logger = logging.getLogger(__name__)
-        logger.warning("WARNING: Cannot find VLPreDataset. Make sure datasets are accessible if you want to use them for training or evaluation.")        
+        logger.warning("WARNING: Cannot find InsturctionDataset. Make sure datasets are accessible if you want to use them for training or evaluation.")        
 
 def register_all_pretrain(root):
     for (

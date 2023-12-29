@@ -5,15 +5,26 @@
 # Written by Xueyan Zou (xueyan@cs.wisc.edu)
 # --------------------------------------------------------
 
-# CuLLAVO LLM
+DATASETS:
+  TRAIN: ["coco_2017_train_panoptic_filtall_with_sem_seg_caption_grounding"] # instruction_train / instp_train
+  # open vocabulary segmentation evaluation.
+  # TEST: ["ade20k_panoptic_val"]
+  TEST: ["vqav2_val"]
+  # TEST: ["ade20k_panoptic_val", "ade20k_full_sem_seg_val", "sunrgbd_37_val_seg", "scannet_21_val_seg", "scannet_21_panoptic_val", "scannet_41_val_seg", "cityscapes_fine_panoptic_val", "cityscapes_fine_instance_seg_val", "cityscapes_fine_sem_seg_val", "bdd10k_val_sem_seg", "bdd10k_40_panoptic_val"]
+  # Supervised metrics evaluation.
+  # TEST: ["coco_2017_val_panoptic_with_sem_seg", "vlp_captioning_val", "refcocog_val_umd", "vlp_val"]
+  SIZE_DIVISIBILITY: 32
+  PROPOSAL_FILES_TRAIN: []
+
+# CuLLaVO LLM
 LLM:
-  LOAD_LLM: true
+  LOAD_LLM: false
   BITS: 8
 
 # Define Test/Trainer/Saving
-PIPELINE: XDecoderPipeline
+PIPELINE: LLaVAVQAPipeline #XDecoderPipeline/RefCOCOPipeline/COCOCaptionPipeline/LLaVAVQAPipeline
 TRAINER: xdecoder
-SAVE_DIR: '/mnt/ssd/lbk-cvpr/CuLLAVO'
+SAVE_DIR: '/mnt/ssd/lbk-cvpr/CuLLaVO'
 base_path: "./"
 
 # Resume Logistic
@@ -26,7 +37,7 @@ EVAL_AT_START: False
 # Logging and Debug
 WANDB: False
 LOG_EVERY: 100
-FIND_UNUSED_PARAMETERS: True
+FIND_UNUSED_PARAMETERS: false
 
 # Speed up training
 FP16: false
@@ -114,7 +125,7 @@ MODEL:
       ENABLED: False
       DIM_IMG: 1024
       ENSEMBLE: True
-    DEEP_SUPERVISION: True
+    DEEP_SUPERVISION: False
     NO_OBJECT_WEIGHT: 0.1
     CAPTION_WEIGHT: 1.0
     CAPTIONING_WEIGHT: 1.0
@@ -224,16 +235,83 @@ INPUT:
   PIXEL_MEAN: [123.675, 116.280, 103.530]
   PIXEL_STD: [58.395, 57.120, 57.375]
 
-DATASETS:
-  TRAIN: ["coco_2017_train_panoptic_filtall_with_sem_seg_caption_grounding"]
-  # open vocabulary segmentation evaluation.
-  # TEST: ["ade20k_panoptic_val"]
-  TEST: ["coco_2017_val_panoptic_with_sem_seg", "refcocog_val_umd"]
-  # TEST: ["ade20k_panoptic_val", "ade20k_full_sem_seg_val", "sunrgbd_37_val_seg", "scannet_21_val_seg", "scannet_21_panoptic_val", "scannet_41_val_seg", "cityscapes_fine_panoptic_val", "cityscapes_fine_instance_seg_val", "cityscapes_fine_sem_seg_val", "bdd10k_val_sem_seg", "bdd10k_40_panoptic_val"]
-  # Supervised metrics evaluation.
-  # TEST: ["vlp_captioning_val", "refcocog_val_umd", "vlp_val"]
-  SIZE_DIVISIBILITY: 32
-  PROPOSAL_FILES_TRAIN: []
+
+# VQAv2 Dataset
+VQA:
+  INPUT:
+    IMAGE_SIZE: 256
+    DATASET_MAPPER_NAME: "vqav2_train"
+    IGNORE_VALUE: 255
+    COLOR_AUG_SSD: False
+    SIZE_DIVISIBILITY: 32
+    MASK_FORMAT: "polygon"
+    FORMAT: "RGB"
+    CROP:
+      ENABLED: True
+    NUM_CLASSES: 3129
+  TRAIN:
+    BATCH_SIZE_TOTAL: 2
+    BATCH_SIZE_PER_GPU: 1
+  TEST:
+    BATCH_SIZE_TOTAL: 1
+    TEMPERATURE: 0
+    TOP_P: None
+    NUM_BEAMS: 1
+    MAX_NEW_TOKENS: 128
+  DATALOADER:
+    FILTER_EMPTY_ANNOTATIONS: False
+    NUM_WORKERS: 16
+    LOAD_PROPOSALS: False
+    SAMPLER_TRAIN: "TrainingSampler"
+    ASPECT_RATIO_GROUPING: True
+
+# Instruction FT Dataset
+INSTRUCT:
+  INPUT:
+    IMAGE_SIZE: 256
+    DATASET_MAPPER_NAME: "instruction_train"
+    IGNORE_VALUE: 255
+    COLOR_AUG_SSD: False
+    SIZE_DIVISIBILITY: 32
+    MASK_FORMAT: "polygon"
+    FORMAT: "RGB"
+    CROP:
+      ENABLED: True
+  TRAIN:
+    BATCH_SIZE_TOTAL: 2
+    BATCH_SIZE_PER_GPU: 1
+  TEST:
+    BATCH_SIZE_TOTAL: 3
+  DATALOADER:
+    FILTER_EMPTY_ANNOTATIONS: False
+    NUM_WORKERS: 16
+    LOAD_PROPOSALS: False
+    SAMPLER_TRAIN: "TrainingSampler"
+    ASPECT_RATIO_GROUPING: True
+
+# Instruction FT Dataset
+INSTP:
+  INPUT:
+    IMAGE_SIZE: 256
+    DATASET_MAPPER_NAME: "instp_train"
+    IGNORE_VALUE: 255
+    COLOR_AUG_SSD: False
+    SIZE_DIVISIBILITY: 32
+    MASK_FORMAT: "polygon"
+    FORMAT: "RGB"
+    CROP:
+      ENABLED: True
+  TRAIN:
+    BATCH_SIZE_TOTAL: 2
+    BATCH_SIZE_PER_GPU: 1
+  TEST:
+    BATCH_SIZE_TOTAL: 3
+  DATALOADER:
+    FILTER_EMPTY_ANNOTATIONS: False
+    NUM_WORKERS: 16
+    LOAD_PROPOSALS: False
+    SAMPLER_TRAIN: "TrainingSampler"
+    ASPECT_RATIO_GROUPING: True
 
 DATALOADER:
   FILTER_EMPTY_ANNOTATIONS: False
@@ -243,20 +321,46 @@ DATALOADER:
   ASPECT_RATIO_GROUPING: True
 
 # Detectron2 training config for optimizer and lr scheduler
+# SOLVER:
+#   BASE_LR: 0.00001
+#   STEPS: [0.88889, 0.96296]
+#   MAX_ITER: 1
+#   GAMMA: 0.1
+#   WARMUP_FACTOR: 1.0
+#   WARMUP_ITERS: 10
+#   WARMUP_METHOD: "linear"
+#   WEIGHT_DECAY: 0.05
+#   OPTIMIZER: "ADAMW"
+#   LR_SCHEDULER_NAME: "WarmupMultiStepLR"
+#   LR_MULTIPLIER:
+#     backbone: 1.0
+#     lang_encoder: 1.0
+#   WEIGHT_DECAY_NORM: 0.0
+#   WEIGHT_DECAY_EMBED: 0.0
+#   CLIP_GRADIENTS:
+#     ENABLED: True
+#     CLIP_TYPE: "full_model"
+#     CLIP_VALUE: 5.0 # 0.01
+#     NORM_TYPE: 2.0
+#   AMP:
+#     ENABLED: True
+#   MAX_NUM_EPOCHS: 50
+
+# Detectron2 training config for optimizer and lr scheduler
 SOLVER:
-  BASE_LR: 0.0001
-  STEPS: [0.88889, 0.96296]
+  BASE_LR: 0.00001
+  BASE_LR_END: 0.0000003
+  STEPS: [0]
   MAX_ITER: 1
-  GAMMA: 0.1
   WARMUP_FACTOR: 1.0
   WARMUP_ITERS: 10
   WARMUP_METHOD: "linear"
-  WEIGHT_DECAY: 0.05
+  WEIGHT_DECAY: 0
   OPTIMIZER: "ADAMW"
-  LR_SCHEDULER_NAME: "WarmupMultiStepLR"
+  LR_SCHEDULER_NAME: "WarmupCosineLR"
   LR_MULTIPLIER:
-    backbone: 0.1
-    lang_encoder: 0.1
+    backbone: 1.0
+    lang_encoder: 1.0
   WEIGHT_DECAY_NORM: 0.0
   WEIGHT_DECAY_EMBED: 0.0
   CLIP_GRADIENTS:
@@ -266,7 +370,8 @@ SOLVER:
     NORM_TYPE: 2.0
   AMP:
     ENABLED: True
-  MAX_NUM_EPOCHS: 50
+  MAX_NUM_EPOCHS: 1
+
 
 # Evaluation Dataset
 ADE20K:

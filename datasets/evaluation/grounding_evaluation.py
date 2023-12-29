@@ -33,14 +33,14 @@ class GroundingEvaluator(DatasetEvaluator):
         meta = MetadataCatalog.get(dataset_name)
 
     def reset(self):
-        self.cum_I = 0
-        self.cum_U = 0
-        self.mIoU = 0
+        self.cum_I = torch.tensor(0.0)
+        self.cum_U = torch.tensor(0.0)
+        self.mIoU = torch.tensor(0.0)
         self.eval_seg_iou_list = [.5, .6, .7, .8, .9]
         self.seg_correct = torch.zeros(len(self.eval_seg_iou_list), device=self._cpu_device)
-        self.seg_total = 0
+        self.seg_total = torch.tensor(0.0)
         if self._compute_box:
-            self.mIoU_box = 0
+            self.mIoU_box = torch.tensor(0.0)
             self.seg_correct_box = torch.zeros(len(self.eval_seg_iou_list), device=self._cpu_device)
 
     @staticmethod
