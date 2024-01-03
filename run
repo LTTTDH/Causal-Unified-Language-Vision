@@ -12,7 +12,7 @@ CUDA_VISIBLE_DEVICES=$GPU_DEVICE mpirun -n $n_gpu python lbk_entry.py train \
             --conf_files configs/cullavo_step1.yaml \
             --overrides \
             PORT $port \
-            WANDB True \
+            WANDB False \
             MODEL.DECODER.CAPTIONING_WEIGHT 8 \
             MODEL.DECODER.RETRIEVAL_WEIGHT 8 \
             MODEL.DECODER.TOP_GROUNDING_LAYERS 6 \

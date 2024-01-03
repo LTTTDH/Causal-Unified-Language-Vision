@@ -66,6 +66,7 @@ class RefCOCOPipeline:
             idx = 0 if dataset_label=='dev' else self._opt['DATASETS']['TEST'].index(dataset_label)
             dataloader = dataloaders[idx]
             self.evaluator = [build_evaluator(self._opt, self._opt['DATASETS']['TEST'][idx], self._opt['SAVE_DIR']) for _ in range(len(COCO_SEMANTIC_CLASSES))]
+            self.evaluator_total = build_evaluator(self._opt, self._opt['DATASETS']['TEST'][idx], self._opt['SAVE_DIR'])
         else:
             if not hasattr(self, 'train_loader'):
                 dataloader = build_train_dataloader(self._opt)
@@ -137,6 +138,7 @@ class RefCOCOPipeline:
             torch.cuda.empty_cache()
             eval_batch_gen = self.get_dataloaders(trainer, dataset_label, is_evaluation=True)
             for x in self.evaluator: x.reset()
+            self.evaluator_total.reset()
             with torch.no_grad():
                 names = get_class_names(dataset_label)
                 model.model.metadata = MetadataCatalog.get(dataset_label)
@@ -163,6 +165,7 @@ class RefCOCOPipeline:
                             [{'groundings': {'masks': batch[0]['groundings']['masks'][i].unsqueeze(0)}}],
                             [{'grounding_mask': outputs[0]['grounding_mask'][i].unsqueeze(0)}])
                         n_image_list[category_id-1] += 1
+                    self.evaluator_total.process(batch, outputs)
             
             model.model.sem_seg_head.predictor.lang_encoder.reset_text_embeddings()
             
@@ -174,7 +177,7 @@ class RefCOCOPipeline:
                 new_n_image_list.append(sum(self.all_gather(x, self._opt['world_size'])))
             n_image_list = new_n_image_list     
 
-        # Result Write on CSV
+        # Class-wise Result Write on CSV
         if self._opt['world_size'] >1: dist.barrier()
         for i, x in enumerate(self.evaluator):
             if n_image_list[i]==0:
@@ -189,6 +192,13 @@ class RefCOCOPipeline:
                         csv_writer = csv.writer(f)
                         csv_writer.writerow([f'{COCO_SEMANTIC_CLASSES[i]}'] + [v for v in results['grounding'].values()] + [n_image_list[i]])
             if self._opt['world_size'] >1: dist.barrier()
+        
+        # Total Result Write on CSV
+        results = self.evaluator_total.evaluate()
+        if self._opt['rank'] == 0:
+            with open("problem_experiment/ref_coco.csv", "a+", newline='') as f:
+                csv_writer = csv.writer(f)
+                csv_writer.writerow(['ALL'] + [v for v in results['grounding'].values()] + [sum(n_image_list)])
 
         # set back to training stat.
         model.model.sem_seg_head.num_classes = self._opt['MODEL']['ENCODER']['NUM_CLASSES']

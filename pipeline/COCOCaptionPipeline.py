@@ -32,6 +32,7 @@ from trainer.utils.misc import move_batch_to_device, cast_batch_to_half
 
 from .utils.misc import hook_metadata, hook_switcher, hook_opt
 import torch.distributed as dist
+from cullavo.utils.utils import *
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,7 @@ class COCOCaptionPipeline:
             from copy import copy
             memory_evaluator = build_evaluator(self._opt, self._opt['DATASETS']['TEST'][idx], self._opt['SAVE_DIR'])
             self.evaluator = [copy(memory_evaluator) for _ in range(len(COCO_SEMANTIC_CLASSES))]
+            self.evaluator_total = build_evaluator(self._opt, self._opt['DATASETS']['TEST'][idx], self._opt['SAVE_DIR'])
         else:
             if not hasattr(self, 'train_loader'):
                 dataloader = build_train_dataloader(self._opt)
@@ -129,8 +131,8 @@ class COCOCaptionPipeline:
         # CLIP
         import torch.nn.functional as F
         from transformers import CLIPProcessor, CLIPModel
-        clip_model = CLIPModel.from_pretrained("openai/clip-vit-large-patch14")
-        clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
+        clip_model = CLIPModel.from_pretrained(CLIPLARGE_LOCAL_PATH)
+        clip_processor = CLIPProcessor.from_pretrained(CLIPLARGE_LOCAL_PATH)
         clip_model = clip_model.cuda()
         
         # CLIP Text
@@ -153,6 +155,7 @@ class COCOCaptionPipeline:
             torch.cuda.empty_cache()
             eval_batch_gen = self.get_dataloaders(trainer, dataset_label, is_evaluation=True)
             for x in self.evaluator: x.reset()
+            self.evaluator_total.reset()
             with torch.no_grad():
                 names = get_class_names(dataset_label)
                 model.model.metadata = MetadataCatalog.get(dataset_label)
@@ -190,6 +193,7 @@ class COCOCaptionPipeline:
                         for j in range(clip_index.shape[1]):
                             self.evaluator[clip_index[i][j]].process([batch[i]], [outputs[i]])
                             n_image_list[clip_index[i][j]] += 1
+                    self.evaluator_total.process(batch, outputs)
                             
                 model.model.sem_seg_head.predictor.lang_encoder.reset_text_embeddings()
 
@@ -201,7 +205,7 @@ class COCOCaptionPipeline:
                 new_n_image_list.append(sum(self.all_gather(x, self._opt['world_size'])))
             n_image_list = new_n_image_list        
 
-        # Result Write on CSV
+        # Class-wise Result Write on CSV
         if self._opt['world_size'] >1: dist.barrier()
         for i, x in enumerate(self.evaluator):
             if n_image_list[i]==0:
@@ -216,6 +220,13 @@ class COCOCaptionPipeline:
                         csv_writer = csv.writer(f)
                         csv_writer.writerow([f'{COCO_SEMANTIC_CLASSES[i]}'] + [v for v in results.values()] + [n_image_list[i]])
             if self._opt['world_size'] >1: dist.barrier()
+            
+        # Total Result Write on CSV
+        results = self.evaluator_total.evaluate()
+        if self._opt['rank'] == 0:
+            with open("problem_experiment/coco_caption.csv", "a+", newline='') as f:
+                csv_writer = csv.writer(f)
+                csv_writer.writerow(['ALL'] + [v for v in results.values()] + [sum(n_image_list)])
 
 
         # set back to training stat.

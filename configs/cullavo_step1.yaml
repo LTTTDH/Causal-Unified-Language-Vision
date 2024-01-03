@@ -18,11 +18,11 @@ DATASETS:
 
 # CuLLaVO LLM
 LLM:
-  LOAD_LLM: false
+  LOAD_LLM: true
   BITS: 8
 
 # Define Test/Trainer/Saving
-PIPELINE: LLaVAVQAPipeline #XDecoderPipeline/RefCOCOPipeline/COCOCaptionPipeline/LLaVAVQAPipeline
+PIPELINE: BakLLaVAVQAPipeline #XDecoderPipeline/RefCOCOPipeline/COCOCaptionPipeline/LLaVAVQAPipeline/BakLLaVAVQAPipeline/BLIP2VQAPipeline/InstructBLIPVQAPipeline/KOSMOS2VQAPipeline
 TRAINER: xdecoder
 SAVE_DIR: '/mnt/ssd/lbk-cvpr/CuLLaVO'
 base_path: "./"
