@@ -34,9 +34,7 @@
             "WEIGHT", "True", 
             "RESUME_FROM", 
             "/mnt/ssd/lbk-cvpr/checkpoints/xdecoder_focall_last.pt"]
-            // "/mnt/ssd/lbk-cvpr/syslearner/run_1/default/epoch1/syslearner.pt"],
             // /mnt/ssd/lbk-cvpr/checkpoints/focalt_in21k_yfcc_gcc_xdecoder_unicl.pt
-            // /mnt/ssd/lbk-cvpr/syslearner/Syslearner_ckpt/default/epoch3_model_state_dict.pt
             // /mnt/ssd/lbk-cvpr/CuLLaVO/run_final/default/epoch1/CuLLaVO.pt
             // /mnt/ssd/lbk-cvpr/checkpoints/xdecoder_focall_last.pt
         }

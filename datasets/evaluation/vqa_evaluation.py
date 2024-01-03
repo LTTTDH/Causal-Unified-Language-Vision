@@ -59,12 +59,6 @@ class VQAEvaluator(DatasetEvaluator):
         self._question_ids = []
 
     def process(self, inputs, outputs):
-        """
-        Args:
-            inputs: the batch inputs to SysLearner model.
-            outputs: the outputs of a SysLearner model. It is a list of dicts with key
-                "text" that contains generated answers and "question_id" that contains question ids.
-        """
         self._gen_answers.append(outputs['text'])
         self._question_ids.append(outputs['question_id'])
 
