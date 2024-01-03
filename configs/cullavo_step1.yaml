@@ -22,7 +22,7 @@ LLM:
   BITS: 8
 
 # Define Test/Trainer/Saving
-PIPELINE: BakLLaVAVQAPipeline #XDecoderPipeline/RefCOCOPipeline/COCOCaptionPipeline/LLaVAVQAPipeline/BakLLaVAVQAPipeline/BLIP2VQAPipeline/InstructBLIPVQAPipeline/KOSMOS2VQAPipeline
+PIPELINE: LLaVAVQAPipeline #XDecoderPipeline/RefCOCOPipeline/COCOCaptionPipeline/LLaVAVQAPipeline/BakLLaVAVQAPipeline/BLIP2VQAPipeline/InstructBLIPVQAPipeline/KOSMOS2VQAPipeline
 TRAINER: xdecoder
 SAVE_DIR: '/mnt/ssd/lbk-cvpr/CuLLaVO'
 base_path: "./"

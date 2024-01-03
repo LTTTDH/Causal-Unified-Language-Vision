@@ -165,7 +165,7 @@ class LLaVAVQAPipeline:
                     # LLaVA Process
                     prompt = ["A chat between a curious human and an artificial intelligence assistant. "
                               "The assistant gives helpful, detailed, and polite answers to the human's questions. "
-                              f"<image>\nUSER:{b['captions'][0]} Answer the question using a single word or phrase.\nASSISTANT:" for b in batch]
+                              f"<image>\nUSER:{b['captions'][0]}\nAnswer the question using a single word or phrase.\nASSISTANT:" for b in batch]
                     llava_inputs = llava_processor(text=prompt, images=torch.stack([b['image'] for b in batch]), return_tensors="pt")
                     
                     # Generate
