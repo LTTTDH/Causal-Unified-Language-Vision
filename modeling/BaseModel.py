@@ -21,7 +21,7 @@ class BaseModel(nn.Module):
 
     def save_pretrained(self, save_dir, epoch):
         model_state_dict = self.model.state_dict()
-        filtered_model_keys = list(filter(lambda x: not x.startswith('llm.'), model_state_dict))
+        filtered_model_keys = list(filter(lambda x: not x.startswith('cullavo_model.'), model_state_dict))
         result_dicts = {}
         for model_key in filtered_model_keys:
             result_dicts[model_key] = model_state_dict[model_key]

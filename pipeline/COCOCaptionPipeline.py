@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 class COCOCaptionPipeline:
     def __init__(self, opt):
         self._opt = opt
+        self.data_classes = COCO_SEMANTIC_CLASSES
 
     def initialize_model(self):
         model_name = "default"
@@ -68,7 +69,7 @@ class COCOCaptionPipeline:
             dataloader = dataloaders[idx]
             from copy import copy
             memory_evaluator = build_evaluator(self._opt, self._opt['DATASETS']['TEST'][idx], self._opt['SAVE_DIR'])
-            self.evaluator = [copy(memory_evaluator) for _ in range(len(COCO_SEMANTIC_CLASSES))]
+            self.evaluator = [copy(memory_evaluator) for _ in range(len(self.data_classes))]
             self.evaluator_total = build_evaluator(self._opt, self._opt['DATASETS']['TEST'][idx], self._opt['SAVE_DIR'])
         else:
             if not hasattr(self, 'train_loader'):
@@ -136,13 +137,13 @@ class COCOCaptionPipeline:
         clip_model = clip_model.cuda()
         
         # CLIP Text
-        text_inputs = clip_processor(text=[f"a photo of {cl}" for cl in COCO_SEMANTIC_CLASSES], return_tensors="pt", padding=True)
+        text_inputs = clip_processor(text=[f"a photo of {cl}" for cl in self.data_classes], return_tensors="pt", padding=True)
         text = clip_model.text_model(**{k:v.cuda()for k, v in text_inputs.items()})[1]
         text = clip_model.text_projection(text)
         norm_text = F.normalize(text, dim=1)
         
         # n_image_list = []
-        n_image_list = [0 for _ in range(len(COCO_SEMANTIC_CLASSES))]
+        n_image_list = [0 for _ in range(len(self.data_classes))]
         
         # CSV
         if self._opt['rank'] == 0:
@@ -212,13 +213,13 @@ class COCOCaptionPipeline:
                 if self._opt['rank'] == 0:
                     with open("problem_experiment/coco_caption.csv", "a+", newline='') as f:
                         csv_writer = csv.writer(f)
-                        csv_writer.writerow([f'{COCO_SEMANTIC_CLASSES[i]}'] + ['NaN']*7 + [n_image_list[i]])
+                        csv_writer.writerow([f'{self.data_classes[i]}'] + ['NaN']*7 + [n_image_list[i]])
             else:
                 results = x.evaluate()
                 if self._opt['rank'] == 0:
                     with open("problem_experiment/coco_caption.csv", "a+", newline='') as f:
                         csv_writer = csv.writer(f)
-                        csv_writer.writerow([f'{COCO_SEMANTIC_CLASSES[i]}'] + [v for v in results.values()] + [n_image_list[i]])
+                        csv_writer.writerow([f'{self.data_classes[i]}'] + [v for v in results.values()] + [n_image_list[i]])
             if self._opt['world_size'] >1: dist.barrier()
             
         # Total Result Write on CSV

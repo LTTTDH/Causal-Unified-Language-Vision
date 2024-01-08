@@ -19,7 +19,7 @@ from infinibatch import iterators
 from trainer.default_trainer import DefaultTrainer
 
 from datasets import build_evaluator, build_eval_dataloader, build_train_dataloader
-from utils.constants import COCO_SEMANTIC_CLASSES
+from utils.constants import IMAGENET_CLASSES
 from trainer.utils.misc import move_batch_to_device, cast_batch_to_half
 
 from .utils.misc import hook_opt
@@ -34,6 +34,7 @@ from transformers import AutoProcessor, LlavaForConditionalGeneration
 class LLaVAVQAPipeline:
     def __init__(self, opt):
         self._opt = opt
+        self.data_classes = IMAGENET_CLASSES
 
     def get_dataloaders(
         self, trainer: DefaultTrainer,
@@ -49,7 +50,7 @@ class LLaVAVQAPipeline:
                 dataloaders = self.valid_loader
             idx = 0 if dataset_label=='dev' else self._opt['DATASETS']['TEST'].index(dataset_label)
             dataloader = dataloaders[idx]
-            self.evaluator = [build_evaluator(self._opt, self._opt['DATASETS']['TEST'][idx], self._opt['SAVE_DIR']) for _ in range(len(COCO_SEMANTIC_CLASSES))]
+            self.evaluator = [build_evaluator(self._opt, self._opt['DATASETS']['TEST'][idx], self._opt['SAVE_DIR']) for _ in range(len(self.data_classes))]
             self.evaluator_total = build_evaluator(self._opt, self._opt['DATASETS']['TEST'][idx], self._opt['SAVE_DIR'])
         else:
             if not hasattr(self, 'train_loader'):
@@ -110,13 +111,13 @@ class LLaVAVQAPipeline:
         self.eval_freeze(clip_model)
         
         # CLIP Text
-        text_inputs = clip_processor(text=COCO_SEMANTIC_CLASSES, return_tensors="pt", padding=True)
+        text_inputs = clip_processor(text=self.data_classes, return_tensors="pt", padding=True)
         text = clip_model.text_model(**{k:v.cuda() for k, v in text_inputs.items()})[1]
         text = clip_model.text_projection(text)
         norm_text = F.normalize(text, dim=1)
         
         # n_image_list = []
-        n_image_list = [0 for _ in range(len(COCO_SEMANTIC_CLASSES))]
+        n_image_list = [0 for _ in range(len(self.data_classes))]
         
         # CSV
         if self._opt['rank'] == 0:
@@ -143,7 +144,10 @@ class LLaVAVQAPipeline:
                     # a = batch[0]['image'].flip(0).permute(1,2,0).cpu().numpy()
                     
                     # LLAMA2
-                    llama2_prompt = f"Choose object the question asks ex) what color is the man's shirt? shirt. ex) how many bikes have helmets? helmets. ex) where are the dogs looking at? dogs. ex) {batch[0]['captions'][0]}"
+                    llama2_prompt = f"Choose object the question asks" +\
+                                    "ex) what color is the man's shirt? shirt. " +\
+                                    "ex) how many bikes have helmets? helmets. " +\
+                                    f"ex) where are the dogs looking at? dogs. ex) {batch[0]['captions'][0]}"
                     llama2_inputs = llama2_tokenizer(llama2_prompt, return_tensors="pt")
 
                     # LLAMA2 In-Context Generation
@@ -196,13 +200,13 @@ class LLaVAVQAPipeline:
                 if self._opt['rank'] == 0:
                     with open("problem_experiment/llava_vqa.csv", "a+", newline='') as f:
                         csv_writer = csv.writer(f)
-                        csv_writer.writerow([f'{COCO_SEMANTIC_CLASSES[i]}'] + ['NaN'] + [n_image_list[i]])
+                        csv_writer.writerow([f'{self.data_classes[i]}'] + ['NaN'] + [n_image_list[i]])
             else:
                 results = x.evaluate()
                 if self._opt['rank'] == 0:
                     with open("problem_experiment/llava_vqa.csv", "a+", newline='') as f:
                         csv_writer = csv.writer(f)
-                        csv_writer.writerow([f'{COCO_SEMANTIC_CLASSES[i]}'] + [results['accuracy']] + [n_image_list[i]])
+                        csv_writer.writerow([f'{self.data_classes[i]}'] + [results['accuracy']] + [n_image_list[i]])
             if self._opt['world_size'] >1: dist.barrier()
         
         # Total Result Write on CSV

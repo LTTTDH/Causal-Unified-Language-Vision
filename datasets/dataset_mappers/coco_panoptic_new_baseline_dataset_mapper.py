@@ -12,6 +12,7 @@ from detectron2.data import transforms as T
 from detectron2.data.transforms import TransformGen
 from detectron2.structures import BitMasks, Boxes, Instances
 from detectron2.data.datasets.builtin_meta import COCO_CATEGORIES
+from utils.constants import COCO_SEMANTIC_CLASSES
 from detectron2.data import MetadataCatalog
 from pycocotools import mask
 
@@ -80,7 +81,6 @@ class COCOPanopticNewBaselineDatasetMapper:
         image_format,
         caption_thres,
         grounding,
-        max_grounding_num,
     ):
         """
         NOTE: this interface is experimental.
@@ -102,7 +102,6 @@ class COCOPanopticNewBaselineDatasetMapper:
         self.is_train = is_train
         self.caption_thres = caption_thres
         self.grounding = grounding
-        self.max_grounding_num = max_grounding_num
         self.caption_similarity = torch.load(MetadataCatalog.get('logistic').get('caption_similarity_pth'))
 
     @classmethod
@@ -116,7 +115,6 @@ class COCOPanopticNewBaselineDatasetMapper:
             "image_format": cfg['INPUT']['FORMAT'],
             "caption_thres": cfg['MODEL']['DECODER']['CAPTION']['SIM_THRES'],
             "grounding": cfg['MODEL']['DECODER']['GROUNDING']['ENABLED'],
-            "max_grounding_num": cfg['MODEL']['DECODER']['GROUNDING']['MAX_LEN'],
         }
         return ret
 
@@ -195,10 +193,11 @@ class COCOPanopticNewBaselineDatasetMapper:
 
         if self.grounding:
             grounding_anno = dataset_dict['grounding_info']
-            grounding_len = random.randint(1, self.max_grounding_num-1)
             if len(grounding_anno) > 0:
                 masks_grd = []
+                boxes_grd = []
                 texts_grd = []
+                classes_grd = []
                 mode = 'text'
                 random.shuffle(grounding_anno)
                 for ann in grounding_anno:
@@ -213,33 +212,38 @@ class COCOPanopticNewBaselineDatasetMapper:
                     # random select a sentence of a single annotation.
                     rand_index = random.randint(0, len(ann['sentences'])-1)
                     texts_grd += [ann['sentences'][rand_index]['raw'].lower()]
-                max_len = min(grounding_len, len(texts_grd))
-                indices = np.random.permutation(max_len)
-                texts_grd = list(np.array(texts_grd)[indices])
-                masks_grd = torch.tensor(np.stack(masks_grd)[indices])
-                hash_grd = np.array([hash(txt) for txt in texts_grd])
+                    classes_grd += [COCO_SEMANTIC_CLASSES[ann['category_id']-1].replace('-other','').replace('-merged','').replace('-stuff','')]
+                    boxes_grd += [ann['bbox']]
+                texts_grd = list(np.array(texts_grd))
+                masks_grd = torch.tensor(np.stack(masks_grd))
+                boxes_grd = torch.tensor(np.stack(boxes_grd))
+                classes_grd = np.array(classes_grd)
             else:
-                masks_grd = instances.gt_masks
-                mode = 'class'
-                if len(masks_grd) == 0:
-                    masks_grd = torch.tensor([])
-                    texts_grd = ['none']
-                    hash_grd = np.array([hash(txt) for txt in texts_grd])
-                else:
-                    texts_grd = np.array([COCO_CATEGORIES[idx]['name'] for idx in classes])
-                    hash_grd = np.array([hash(txt) for txt in texts_grd])
-                    unique_hash_grd = np.unique(hash_grd)
-                    np.random.shuffle(unique_hash_grd)
-                    max_len = min(grounding_len, len(unique_hash_grd))
-                    indices = np.random.permutation(max_len)                    
-                    selected_unique_hash_grd = unique_hash_grd[indices]
-                    selected_mask = np.in1d(hash_grd, selected_unique_hash_grd)
-                    texts_grd = texts_grd[selected_mask]
-                    hash_grd = hash_grd[selected_mask]
-                    masks_grd = masks_grd[selected_mask]
-                    texts_grd = [prompt_engineering(text.replace('-other','').replace('-merged','').replace('-stuff',''), topk=10000, suffix='.') \
-                                        for text in texts_grd]
-            groundings = {'masks': masks_grd, 'texts': texts_grd, 'mode': mode, 'hash': hash_grd}
+                masks_grd = None
+                boxes_grd = None
+                classes_grd = None
+                texts_grd= None
+                mode = 'no text'
+                
+                # masks_grd = instances.gt_masks
+                # boxes_grd = instances.gt_boxes.tensor
+                # mode = 'class'
+                # if len(masks_grd) == 0:
+                #     masks_grd = torch.tensor([])
+                #     texts_grd = ['none']
+                #     hash_grd = np.array([hash(txt) for txt in texts_grd])
+                # else:
+                #     classes_grd = np.array([COCO_CATEGORIES[idx]['name'].replace('-other','').replace('-merged','').replace('-stuff','') for idx in classes])
+                #     hash_grd = np.array([hash(txt) for txt in classes_grd])
+                #     unique_hash_grd = np.unique(hash_grd)
+                #     selected_mask = np.in1d(hash_grd, unique_hash_grd)
+                #     classes_grd = classes_grd[selected_mask]
+                #     hash_grd = hash_grd[selected_mask]
+                #     masks_grd = masks_grd[selected_mask]
+                #     boxes_grd = boxes_grd[selected_mask]
+                #     texts_grd = classes_grd # [prompt_engineering(text, topk=10000, suffix='.') for text in classes_grd]
+
+            groundings = {'masks': masks_grd, 'boxes': boxes_grd, 'classes': classes_grd, 'texts': texts_grd, 'mode': mode}
             dataset_dict["groundings"] = groundings        
 
         return dataset_dict

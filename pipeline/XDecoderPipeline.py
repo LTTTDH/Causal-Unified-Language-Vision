@@ -102,8 +102,8 @@ class XDecoderPipeline:
         loss_info = {k: v.detach().item() for k,v in loss.items()}
         sample_size_info = {'num_samples': len(batch)}
         loss = sum(loss for loss in loss.values())
-        trainer.backward_loss(loss, model_names=['default'])
-        trainer.update_model(model_name='default')
+        # trainer.backward_loss(loss, model_names=['default'])
+        # trainer.update_model(model_name='default')
         return loss_info, sample_size_info, extra_info
 
     def evaluate_model(

@@ -53,22 +53,22 @@ class ImageNetDatasetMapper:
             image_format: an image format supported by :func:`detection_utils.read_image`.
         """
         self.is_train = is_train
-        self.size_train = size_train
-        self.size_test = size_test
-        self.size_crop = size_crop
+        # self.size_train = size_train
+        # self.size_test = size_test
+        # self.size_crop = size_crop
 
-        t = []
-        t.append(transforms.Resize(size_crop, interpolation=Image.BICUBIC))
-        t.append(transforms.CenterCrop(size_test))
-        self.transform = transforms.Compose(t)
+        # t = []
+        # t.append(transforms.Resize(size_crop, interpolation=Image.BICUBIC))
+        # t.append(transforms.CenterCrop(size_test))
+        # self.transform = transforms.Compose(t)
         
     @classmethod
     def from_config(cls, cfg, is_train=True):
         ret = {
             "is_train": is_train,
-            "size_train": cfg['INPUT']['SIZE_TRAIN'],
-            "size_test": cfg['INPUT']['SIZE_TEST'],
-            "size_crop": cfg['INPUT']['SIZE_CROP']
+            # "size_train": cfg['INPUT']['SIZE_TRAIN'],
+            # "size_test": cfg['INPUT']['SIZE_TEST'],
+            # "size_crop": cfg['INPUT']['SIZE_CROP']
         }
         return ret
 
@@ -84,12 +84,13 @@ class ImageNetDatasetMapper:
         file_name = dataset_dict['file_name']
         image = Image.open(file_name).convert('RGB')
 
-        if self.is_train == False:
-            image = self.transform(image)
-            image = torch.from_numpy(np.asarray(image).copy())            
-            image = image.permute(2,0,1)
-
+        # if self.is_train == False:
+        #     image = self.transform(image)
+        
+        image = torch.from_numpy(np.asarray(image).copy())            
+        image = image.permute(2,0,1)
+        
         dataset_dict['image'] = image
         dataset_dict['height'] = image.shape[1]
         dataset_dict['width'] = image.shape[2]
-        return dataset_dict
+        return dataset_dict     # keys: file_name, class_name, class_id, image, height, width

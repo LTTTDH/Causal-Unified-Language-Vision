@@ -2,3 +2,4 @@ __pycache__
 */__pycache__
 problem_experiment
 figures
+run_load_imagenet.bash

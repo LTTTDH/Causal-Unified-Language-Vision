@@ -27,17 +27,17 @@ def load_imagenet_images(dirname: str, split: str, class_names: Union[List[str],
         split (str): one of "train", "test", "val", "trainval"
         class_names: list or tuple of class names
     """
-    image_folders = sorted(glob.glob(os.path.join(dirname, split, 'n*')))
+    image_folders = sorted(glob.glob(os.path.join(dirname, split, 'n*')))       # glob.glob(): return a list of directories with a specified pattern
 
     dicts = []
     for image_folder in image_folders:
-        folder_name = image_folder.split('/')[-1]
-        image_pths = sorted(glob.glob(os.path.join(image_folder, "*.JPEG")))
+        folder_name = image_folder.split('/')[-1]                               # n*
+        image_pths = sorted(glob.glob(os.path.join(image_folder, "*.JPEG")))    # all image directories in n* folder
         for img_pth in image_pths:
             r = {
                 "file_name": img_pth,
-                "class_name": IMAGENET_CLASSES[IMAGENET_FOLDER_NAMES.index(folder_name)],
-                "class_id": IMAGENET_FOLDER_NAMES.index(folder_name),
+                "class_name": IMAGENET_CLASSES[IMAGENET_FOLDER_NAMES.index(folder_name)],   # str
+                "class_id": IMAGENET_FOLDER_NAMES.index(folder_name),                       # int
             }
             dicts.append(r)
     return dicts
@@ -52,12 +52,13 @@ def register_imagenet(name, dirname, split, year, class_names=IMAGENET_CLASSES):
 
 def register_all_imagenet(root):
     SPLITS = [
-            ("imagenet_val", "imagenet", "val", "2012"),
+            ("imagenet_train", "imagenet-2012", "train", "2012"),
+            ("imagenet_val", "imagenet-2012", "val", "2012"),
         ]
     for name, dirname, split, year in SPLITS:
         register_imagenet(name, os.path.join(root, dirname), split, year)
         MetadataCatalog.get(name).evaluator_type = "classification"
 
 
-_root = os.getenv("DATASET", "datasets")
-register_all_imagenet(_root)
+_root = os.getenv("DATASET", "datasets")    # returns the value of the environment key if exists otherwise returns the default value(second argument) 
+register_all_imagenet(_root)                # _root = "/mnt/hard2/lbk-cvpr/dataset"

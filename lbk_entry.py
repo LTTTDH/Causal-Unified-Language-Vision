@@ -5,9 +5,9 @@ def main(args=None):
 
     from trainer import XDecoder_Trainer as Trainer
     trainer = Trainer(opt)
-    # trainer.train()
-    # trainer.eval() # X-Decoder/SEEM/FIND
-    trainer.eval_for_vl_model() # LLaVA1.5/BLIPv2/Instruct-BLIP
+    trainer.train()
+    # trainer.eval() # X-Decoder/SEEM
+    # trainer.eval_for_vl_model() # LLaVA1.5/BLIPv2/Instruct-BLIP
 
 if __name__ == "__main__":
     main()
