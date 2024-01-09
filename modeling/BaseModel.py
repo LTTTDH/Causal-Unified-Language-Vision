@@ -36,7 +36,7 @@ class BaseModel(nn.Module):
         if self.opt['LLM']['LOAD_LLM']:
             try:
                 from peft import PeftModel
-                self.model.llm = PeftModel.from_pretrained(self.model.llm, os.path.join("/".join(load_dir.split('/')[:-1]), 'llm'))
+                self.model.cullavo = PeftModel.from_pretrained(self.model.cullavo, os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo'))
                 # self.model.llm.from_pretrained(os.path.join("/".join(load_dir.split('/')[:-1]), 'llm'))
                 # self.model.llm_tokenizer.from_pretrained(os.path.join("/".join(load_dir.split('/')[:-1]), 'llm'),
                 #                                         cache_dir=False,
@@ -44,9 +44,9 @@ class BaseModel(nn.Module):
                 #                                         padding_side="right",
                 #                                         use_fast=False)
             except:
-                print('There are no LLM pretrained file: {}'.format(os.path.join("/".join(load_dir.split('/')[:-1]))))
+                print('There are no CuLLaVO pretrained file: {}'.format(os.path.join("/".join(load_dir.split('/')[:-1]))))
 
-        state_dict = torch.load(load_dir, map_location=self.opt['device'])
+        state_dict = torch.load(load_dir, map_location=self.opt['accel'].device)
         state_dict = align_and_update_state_dicts(self.model.state_dict(), state_dict)
         self.model.load_state_dict(state_dict, strict=False)
         return self

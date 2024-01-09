@@ -75,7 +75,6 @@ class InstPreDatasetMapper:
         image_format,
         tokenizer=None,
         max_token_num=None,
-        device=None,
     ):
         """
         NOTE: this interface is experimental.
@@ -100,7 +99,6 @@ class InstPreDatasetMapper:
 
         self.tokenizer = tokenizer
         self.max_token_num = max_token_num
-        self.device = device
 
     @classmethod
     def from_config(cls, cfg, is_train=True, dataset_name=None):
@@ -108,7 +106,6 @@ class InstPreDatasetMapper:
         tfm_gens = build_transform_gen(cfg, is_train)
 
         tokenizer = build_tokenizer(cfg['MODEL']['TEXT'])
-        device = cfg['device']
 
         ret = {
             "is_train": is_train,
@@ -117,7 +114,6 @@ class InstPreDatasetMapper:
             "image_format": cfg['INPUT']['FORMAT'],
             "tokenizer": tokenizer,
             "max_token_num": 256,
-            "device": device,
         }
         return ret
 

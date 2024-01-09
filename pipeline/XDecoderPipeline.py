@@ -40,15 +40,10 @@ class XDecoderPipeline:
         self._opt = opt
 
     def initialize_model(self):
-        model_name = "default"
         model = build_model(self._opt)
         model.train()
-
-        # if is_main_process():
-        #     logger.info(model)
-
-        raw_models = {model_name: BaseModel(self._opt, model)}
-        return raw_models
+        model = BaseModel(self._opt, model)
+        return model
 
     def get_dataloaders(
         self, trainer: DefaultTrainer,
@@ -75,35 +70,29 @@ class XDecoderPipeline:
                 
             # temp solution for lr scheduler
             steps_total = len(self.train_loader)
-            steps_acc = self._opt['GRADIENT_ACCUMULATE_STEP']
+            steps_acc = self._opt['LLM']['GRAD_CUM']
             steps_update = steps_total // steps_acc
             self._opt["LR_SCHEDULER_PARAMS"]["steps_update_per_epoch"] = steps_update
         return dataloader
 
     @staticmethod
     def forward_func(trainer, batch):
-        loss = trainer.models['default'](batch)
+        loss = trainer.model(batch)
         return loss
 
     def forward_step(
         self,
         trainer: DefaultTrainer,
         batch,
-        grad_acc_batches: List,
-        grad_acc_index: int,
-        is_distributed: bool,
     ) -> Tuple[Dict[str, float], Dict[str, int], Dict]:
         loss_info, sample_size_info, extra_info = {}, {}, {}
-        batch = move_batch_to_device(batch, self._opt['device'])
-        if self._opt['FP16']:
-            # in FP16 mode, DeepSpeed casts the model to FP16, so the input needs to be manually casted to FP16
-            batch = cast_batch_to_half(batch)
+        batch = move_batch_to_device(batch, trainer.accel.device)
         loss = trainer.compute_loss(self.forward_func, batch)
         loss_info = {k: v.detach().item() for k,v in loss.items()}
         sample_size_info = {'num_samples': len(batch)}
         loss = sum(loss for loss in loss.values())
-        # trainer.backward_loss(loss, model_names=['default'])
-        # trainer.update_model(model_name='default')
+        trainer.backward_loss(loss)
+        trainer.update_model()
         return loss_info, sample_size_info, extra_info
 
     def evaluate_model(
@@ -111,7 +100,7 @@ class XDecoderPipeline:
         trainer: DefaultTrainer,
     ) -> Tuple[Dict, Dict[str, float], bool]:
 
-        model = trainer.raw_models['default'].eval()
+        model = trainer.model.eval()
         self._opt = hook_opt(self._opt)
         dataset_names = self._opt['DATASETS']['TEST']
         scores = {}
@@ -121,6 +110,11 @@ class XDecoderPipeline:
             torch.cuda.empty_cache()
             eval_batch_gen = self.get_dataloaders(trainer, dataset_label, is_evaluation=True)
             self.evaluator.reset()
+            
+            # accelerate wrapping
+            model, eval_batch_gen = trainer.accel.prepare(model, eval_batch_gen)
+            model = model.module # DDP
+            
             with torch.no_grad():
                 names = get_class_names(dataset_label)
                 model.model.metadata = MetadataCatalog.get(dataset_label)
@@ -138,7 +132,7 @@ class XDecoderPipeline:
                 total_eval_time = 0
                 start_data_time = time.perf_counter()
                 
-                prog_bar = tqdm(enumerate(eval_batch_gen), total=total, leave=True)
+                prog_bar = tqdm(enumerate(eval_batch_gen), total=total, leave=True, disable=not trainer.accel.is_local_main_process)
                 for idx, batch in prog_bar:
                     total_data_time += time.perf_counter() - start_data_time
                     if idx == num_warmup:
@@ -148,11 +142,7 @@ class XDecoderPipeline:
                         total_eval_time = 0
 
                     start_compute_time = time.perf_counter()
-                    batch = move_batch_to_device(batch, self._opt['device'])
-                    if self._opt['FP16']:
-                        # in FP16 mode, DeepSpeed casts the model to FP16, so the input needs to be manually casted to FP16
-                        batch = cast_batch_to_half(batch)
-
+                    batch = move_batch_to_device(batch, trainer.accel.device)
                     outputs = model(batch, mode=eval_type)
                     if torch.cuda.is_available():
                         torch.cuda.synchronize()

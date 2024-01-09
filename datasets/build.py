@@ -232,7 +232,7 @@ def build_detection_test_loader(
     return torchdata.DataLoader(
         dataset,
         batch_size=batch_size,
-        sampler=sampler,
+        # sampler=sampler, # accelerator
         drop_last=False,
         num_workers=num_workers,
         collate_fn=trivial_batch_collator if collate_fn is None else collate_fn,
@@ -309,7 +309,7 @@ def build_detection_train_loader(
     assert isinstance(sampler, torch.utils.data.sampler.Sampler)
     return build_batch_data_loader(
         dataset,
-        sampler,
+        # sampler, # accelerator
         total_batch_size,
         aspect_ratio_grouping=aspect_ratio_grouping,
         num_workers=num_workers,

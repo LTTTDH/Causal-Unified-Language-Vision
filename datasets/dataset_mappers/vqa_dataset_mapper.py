@@ -75,7 +75,6 @@ class VQADatasetMapper:
         *,
         tfm_gens,
         image_format,
-        device=None,
     ):
         """
         NOTE: this interface is experimental.
@@ -98,22 +97,18 @@ class VQADatasetMapper:
 
         self.all_arrows = MetadataCatalog.get(dataset_name).arrows
 
-        self.device = device
 
     @classmethod
     def from_config(cls, cfg, is_train=True, dataset_name=None):
         # Build augmentation
         tfm_gens = build_transform_gen(cfg, is_train)
 
-        max_token_num = 1024
-        device = cfg['device']
 
         ret = {
             "is_train": is_train,
             "dataset_name": dataset_name,
             "tfm_gens": tfm_gens,
             "image_format": cfg['INPUT']['FORMAT'],
-            "device": device,
         }
         return ret
 

@@ -152,7 +152,7 @@ class CuLLaVO(nn.Module):
             bits = cfg['LLM']['BITS']
             cullavo_model, cullavo_processor = prepare_cullavo(bits=bits)
         else:
-            cullavo_model, cullavo_processor = None
+            cullavo_model, cullavo_processor = None, None
 
         # init weight dict and criterion loss functions.
         losses = {'seg': [], 'vlp': []}

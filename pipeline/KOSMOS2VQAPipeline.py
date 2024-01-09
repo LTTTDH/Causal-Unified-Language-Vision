@@ -19,7 +19,7 @@ from infinibatch import iterators
 from trainer.default_trainer import DefaultTrainer
 
 from datasets import build_evaluator, build_eval_dataloader, build_train_dataloader
-from utils.constants import IMAGENET_CLASSES
+from utils.constants import COCO_SEMANTIC_CLASSES
 from trainer.utils.misc import move_batch_to_device, cast_batch_to_half
 
 from .utils.misc import hook_opt
@@ -33,7 +33,7 @@ from transformers import AutoProcessor, Kosmos2ForConditionalGeneration
 class KOSMOS2VQAPipeline:
     def __init__(self, opt):
         self._opt = opt
-        self.data_classes = IMAGENET_CLASSES
+        self.data_classes = COCO_SEMANTIC_CLASSES
 
     def get_dataloaders(
         self, trainer: DefaultTrainer,
@@ -61,7 +61,7 @@ class KOSMOS2VQAPipeline:
                 
             # temp solution for lr scheduler
             steps_total = len(self.train_loader)
-            steps_acc = self._opt['GRADIENT_ACCUMULATE_STEP']
+            steps_acc = self._opt['LLM']['GRAD_CUM']
             steps_update = steps_total // steps_acc
             self._opt["LR_SCHEDULER_PARAMS"]["steps_update_per_epoch"] = steps_update
         return dataloader
@@ -92,13 +92,13 @@ class KOSMOS2VQAPipeline:
 
         # LLAMA2 8Bit compression
         from transformers import AutoTokenizer, LlamaForCausalLM
-        llama2_model = LlamaForCausalLM.from_pretrained(LLAMA2_LOCAL_PATH, load_in_8bit=True, device_map=self._opt['rank'], torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2")
+        llama2_model = LlamaForCausalLM.from_pretrained(LLAMA2_LOCAL_PATH, load_in_8bit=True, torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2")
         llama2_tokenizer = AutoTokenizer.from_pretrained(LLAMA2_LOCAL_PATH)
         self.eval_freeze(llama2_model)
         
         # KOSMOS2
         kosmos2_model = Kosmos2ForConditionalGeneration.from_pretrained(KOSMOS2_LOCAL_PATH)
-        kosmos2_model = kosmos2_model.cuda()
+        kosmos2_model = kosmos2_model.to(trainer.accel.device)
         kosmos2_processor = AutoProcessor.from_pretrained(KOSMOS2_LOCAL_PATH)
         self.eval_freeze(kosmos2_model)
         
@@ -107,12 +107,12 @@ class KOSMOS2VQAPipeline:
         from transformers import CLIPProcessor, CLIPModel
         clip_model = CLIPModel.from_pretrained(CLIPLARGE_LOCAL_PATH)
         clip_processor = CLIPProcessor.from_pretrained(CLIPLARGE_LOCAL_PATH)
-        clip_model = clip_model.cuda()
+        clip_model = clip_model.to(trainer.accel.device)
         self.eval_freeze(clip_model)
         
         # CLIP Text
         text_inputs = clip_processor(text=self.data_classes, return_tensors="pt", padding=True)
-        text = clip_model.text_model(**{k:v.cuda() for k, v in text_inputs.items()})[1]
+        text = clip_model.text_model(**{k:v.to(trainer.accel.device) for k, v in text_inputs.items()})[1]
         text = clip_model.text_projection(text)
         norm_text = F.normalize(text, dim=1)
         
@@ -120,7 +120,7 @@ class KOSMOS2VQAPipeline:
         n_image_list = [0 for _ in range(len(self.data_classes))]
         
         # CSV
-        if self._opt['rank'] == 0:
+        if trainer.accel.is_main_process:
             import csv
             with open("problem_experiment/kosmos2_vqa.csv", "w") as f:
                 csv_writer = csv.writer(f)
@@ -131,14 +131,18 @@ class KOSMOS2VQAPipeline:
             eval_batch_gen = self.get_dataloaders(trainer, dataset_label, is_evaluation=True)
             for x in self.evaluator: x.reset()
             self.evaluator_total.reset()
+            
+            # accelerate wrapping
+            llama2_model, clip_model, kosmos2_model, eval_batch_gen = trainer.accel.prepare(llama2_model, clip_model, kosmos2_model, eval_batch_gen)
+            llama2_model = llama2_model.module # DDP
+            clip_model = clip_model.module # DDP
+            kosmos2_model = kosmos2_model.module # DDP
+            
             with torch.no_grad():
-                prog_bar = tqdm(enumerate(eval_batch_gen), total=len(eval_batch_gen), leave=True)
+                prog_bar = tqdm(enumerate(eval_batch_gen), total=len(eval_batch_gen), leave=True, disable=not trainer.accel.is_local_main_process)
                 for idx, batch in prog_bar:
 
-                    batch = move_batch_to_device(batch, self._opt['device'])
-                    if self._opt['FP16']:
-                        # in FP16 mode, DeepSpeed casts the model to FP16, so the input needs to be manually casted to FP16
-                        batch = cast_batch_to_half(batch)
+                    batch = move_batch_to_device(batch, trainer.accel.device)
 
                     # Visualization
                     # a = batch[0]['image'].permute(1,2,0).cpu().numpy()
@@ -152,12 +156,12 @@ class KOSMOS2VQAPipeline:
 
                     # LLAMA2 In-Context Generation
                     with torch.inference_mode():
-                        llama2_generate_ids = llama2_model.generate(llama2_inputs.input_ids.cuda(), max_new_tokens=10, do_sample=True, top_p=0.9, temperature=0.9, pad_token_id=llama2_tokenizer.eos_token_id)
+                        llama2_generate_ids = llama2_model.generate(llama2_inputs.input_ids.to(trainer.accel.device), max_new_tokens=10, do_sample=True, top_p=0.9, temperature=0.9, pad_token_id=llama2_tokenizer.eos_token_id)
                     llama2_text = llama2_tokenizer.batch_decode(llama2_generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0][len(llama2_prompt):].strip()
 
                     # CLIP Text
                     text_inputs = clip_processor(text=llama2_text.split('.')[0], return_tensors="pt", padding=True)
-                    text_embed = clip_model.text_model(**{k:v.cuda()for k, v in text_inputs.items()})[1]
+                    text_embed = clip_model.text_model(**{k:v.to(trainer.accel.device)for k, v in text_inputs.items()})[1]
                     text_embed = clip_model.text_projection(text_embed)
                     norm_text_embed = F.normalize(text_embed, dim=1)
                     
@@ -172,11 +176,11 @@ class KOSMOS2VQAPipeline:
                     
                     # Generate
                     with torch.inference_mode():
-                        generate_ids = kosmos2_model.generate(pixel_values=kosmos2_inputs["pixel_values"].cuda(),
-                                                            input_ids=kosmos2_inputs["input_ids"].cuda(),
-                                                            attention_mask=kosmos2_inputs["attention_mask"].cuda(),
+                        generate_ids = kosmos2_model.generate(pixel_values=kosmos2_inputs["pixel_values"].to(trainer.accel.device),
+                                                            input_ids=kosmos2_inputs["input_ids"].to(trainer.accel.device),
+                                                            attention_mask=kosmos2_inputs["attention_mask"].to(trainer.accel.device),
                                                             image_embeds=None,
-                                                            image_embeds_position_mask=kosmos2_inputs["image_embeds_position_mask"].cuda(),
+                                                            image_embeds_position_mask=kosmos2_inputs["image_embeds_position_mask"].to(trainer.accel.device),
                                                             use_cache=True,
                                                             max_new_tokens=64)
                     decoded_text = kosmos2_processor.post_process_generation(
@@ -202,13 +206,13 @@ class KOSMOS2VQAPipeline:
         if self._opt['world_size'] > 1: dist.barrier()
         for i, x in enumerate(self.evaluator):
             if n_image_list[i]==0:
-                if self._opt['rank'] == 0:
+                if trainer.accel.is_main_process:
                     with open("problem_experiment/kosmos2_vqa.csv", "a+", newline='') as f:
                         csv_writer = csv.writer(f)
                         csv_writer.writerow([f'{self.data_classes[i]}'] + ['NaN'] + [n_image_list[i]])
             else:
                 results = x.evaluate()
-                if self._opt['rank'] == 0:
+                if trainer.accel.is_main_process:
                     with open("problem_experiment/kosmos2_vqa.csv", "a+", newline='') as f:
                         csv_writer = csv.writer(f)
                         csv_writer.writerow([f'{self.data_classes[i]}'] + [results['accuracy']] + [n_image_list[i]])
@@ -216,7 +220,7 @@ class KOSMOS2VQAPipeline:
         
         # Total Result Write on CSV
         results = self.evaluator_total.evaluate()
-        if self._opt['rank'] == 0:
+        if trainer.accel.is_main_process:
             with open("problem_experiment/kosmos2_vqa.csv", "a+", newline='') as f:
                 csv_writer = csv.writer(f)
                 csv_writer.writerow(['ALL'] + [results['accuracy']] + [sum(n_image_list)])

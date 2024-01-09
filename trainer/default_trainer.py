@@ -64,18 +64,15 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
         return results
 
 
-    def eval(self, ):
+    def eval(self):
         logger.info('-----------------------------------------------')
         logger.info("Evaluating model ... ")
         self.mode = "eval"
 
-        # self.model_names, self.raw_models, self.criteria = self.pipeline.set_up_model()
-        self.raw_models = self.pipeline.initialize_model()
-        self.model_names = self.raw_models.keys()
+        self.model = self.pipeline.initialize_model()
 
-        # move models to the device
-        for module_name in self.model_names:
-            self.raw_models[module_name].to(self.opt['device'])
+        # move model to the device
+        self.model.to(self.accel.device)
 
         # load model during evaluation
         if self.opt['WEIGHT'] and os.path.isfile(self.opt['RESUME_FROM']):
@@ -85,115 +82,67 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
             raise ValueError(f"Model not found: {model_path}")
 
         results = self._eval_on_set()
-        if self.opt['rank'] == 0: self.dictionary_display(results)
-        if self.opt['rank'] == 0 and self.opt['WANDB']: wandb.log(results)
+        if self.accel.is_main_process: self.dictionary_display(results)
+        if self.accel.is_main_process and self.opt['WANDB']: wandb.log(results)
         return results
     
     
-    def _eval_on_set(self):
-        if self.opt['FP16']:
-            from torch.cuda.amp import autocast
-            with autocast():
-                results = self.pipeline.evaluate_model(self)
-        else:        
-            results = self.pipeline.evaluate_model(self)
+    def _eval_on_set(self):      
+        results = self.pipeline.evaluate_model(self)
         return results
 
     def compute_loss(self, forward_func, batch):
 
         def forward(func, trainer, batch):
-            if self.opt['FP16']:
-                from torch.cuda.amp import autocast
-                with autocast():
-                    loss = func(trainer, batch)
-            else:
-                loss = func(trainer, batch)
+            loss = func(trainer, batch)
             return loss
 
         loss = forward(forward_func, self, batch)
         return loss
 
-    def backward_loss(self, loss, model_names=['default']):  # noqa: E252
+    def backward_loss(self, loss):  # noqa: E252
+        self.accel.backward(loss)
 
-        def backward(loss_tensor):
-            if self.opt['FP16']:
-                self.grad_scaler.scale(loss_tensor).backward()
-            else:
-                loss_tensor.backward()
-            
-        if self.grad_acc_steps > 1:
-            loss = loss / self.grad_acc_steps
-
-        backward(loss)
-        return loss
-
-    def update_model(self, model_name='default'):
-        if self.opt['FP16']:
-            self.grad_scaler.unscale_(self.optimizers[model_name])
-            self.grad_scaler.step(self.optimizers[model_name])
-        else:
-            self.optimizers[model_name].step()
-
-        self.optimizers[model_name].zero_grad()
-        self.train_params['optim_steps'][model_name] += 1
-        self.lr_schedulers[model_name].step()
+    def update_model(self):
+        self.optimizer.step()
+        self.optimizer.zero_grad()
+        self.train_params['optim_steps'] += 1
+        self.lr_scheduler.step()
 
     def train_step(self, batch):
-        self.grad_acc_batches.append(batch) # support batch accumulation
 
-        if self.is_gradient_accumulation_boundary():
-            # set all modules and criteria into training mode
-            for model_name in self.model_names:
-                self.models[model_name].train()
+        # set all modules and criteria into training mode
+        self.model.train()
 
-            assert len(self.grad_acc_batches) == self.grad_acc_steps
+        total_batch_sample = 0
 
-            total_batch_sample = 0
-            for batch_index, batch in enumerate(self.grad_acc_batches):
+        loss_info, sample_size_info, extra_info = self.pipeline.forward_step(self, batch)
 
-                loss_info, sample_size_info, extra_info = \
-                    self.pipeline.forward_step(self,
-                                            batch,
-                                            self.grad_acc_batches,
-                                            batch_index,
-                                            is_distributed=(self.opt['world_size'] > 1))
+        self.train_loss.update_iter(loss_info)
+        total_batch_sample += sample_size_info['num_samples']
 
-                self.train_loss.update_iter(loss_info)
-                total_batch_sample += sample_size_info['num_samples']
+        # update losses and item counts of an effective batch to the AverageMeters
+        total_batch_sample = torch.tensor(total_batch_sample).to(self.accel.device)
+        torch.distributed.all_reduce(total_batch_sample, torch.distributed.ReduceOp.SUM)
+        total_batch_sample = total_batch_sample.item()
 
-            if self.opt['FP16']:
-                # Update GradScaler after an effective batch
-                self.grad_scaler.update()
-
-            # update losses and item counts of an effective batch to the AverageMeters
-            if self.opt['world_size'] > 1:
-                total_batch_sample = torch.tensor(total_batch_sample).to(self.opt['device'])
-                torch.distributed.all_reduce(total_batch_sample, torch.distributed.ReduceOp.SUM)
-                total_batch_sample = total_batch_sample.item()
-
-            self.train_params['total_batch_size'] += total_batch_sample
-            self.grad_acc_batches = []
+        self.train_params['total_batch_size'] += total_batch_sample
 
         self.train_params['num_updates'] += 1
         
     def init_train(self):
         self.mode = "train"
-        # logger.info('-------------------------------------------------------')
-        # logger.info("Training on rank: {}".format(self.opt['rank']))
+        self.model = self.pipeline.initialize_model()
 
-        self.raw_models = self.pipeline.initialize_model()
-        self.model_names = list(self.raw_models.keys())
-
-        # move models to the device
-        for module_name in self.model_names:
-            self.raw_models[module_name].to(self.opt['device'])
+        # move model to the device
+        self.model.to(self.accel.device)
 
         self.train_dataloaders = self.pipeline.get_dataloaders(self, 'train', is_evaluation=False)
         self.train_params = {
                              "updates_per_epoch": len(self.train_dataloaders),
                              "total_batch_size": 0,
                              "num_updates": 0,
-                             "optim_steps": {module_name: 0 for module_name in self.model_names},
+                             "optim_steps": 0,
                              "start_epoch_idx": 0,
                              "start_batch_idx": 0,
                              "current_epoch_idx": 0,
@@ -202,32 +151,17 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
                              }
 
         self.train_loss = LossMeter()
-        self.grad_acc_batches = []
 
         if self.opt['CUDA']:
             torch.cuda.empty_cache()
 
         self.create_optimizer_and_scheduler()
-        self.models = {model_name: self.raw_models[model_name] for model_name in self.model_names}
-        self._initialize_ddp()
+        self._initialize_accelerator() # accelerator
 
         if self.opt.get('WEIGHT', False):
             self.load_weight(self.opt['RESUME_FROM'], must_exist=True)
         if self.opt.get('RESUME', False):
             self.load_checkpoint(self.opt['RESUME_FROM'], must_exist=True)
-
-        ######################
-        # Start the main loop
-        ######################
-        # if self.opt['rank'] == 0:
-        #     # Train!
-        #     logger.info("***** Running training *****")
-        #     logger.info(f"  Num of GPUs = {self.opt['world_size']}")
-        #     logger.info(f"  Num Epochs = {self.opt['SOLVER']['MAX_NUM_EPOCHS']}")
-        #     logger.info(f"  Num of Mini Batches per Epoch = {self.train_params['updates_per_epoch']}")
-        #     logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {self.opt['SOLVER']['MAX_NUM_EPOCHS'] * self.train_params['updates_per_epoch']}")
-        #     logger.info(f"  Gradient Accumulation steps = {self.grad_acc_steps}")
-        #     logger.info(f"  Total optimization steps = {self.opt['SOLVER']['MAX_NUM_EPOCHS'] * self.train_params['updates_per_epoch'] // self.grad_acc_steps}")
 
     @staticmethod
     def dictionary_display(results):
@@ -249,12 +183,11 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
         Training
         """
         self.init_train()
-        current_optim_steps = self._get_and_validate_current_optim_steps()
         num_epochs = self.opt['SOLVER']['MAX_NUM_EPOCHS']
 
         if self.opt.get('EVAL_AT_START', False):
             results = self._eval_on_set()
-            if self.opt['rank'] == 0 and self.opt['WANDB']:
+            if self.accel.is_main_process and self.opt['WANDB']:
                 wandb.log(results)
 
         train_prev_logged_time = datetime.now()
@@ -263,47 +196,36 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
             logger.info(f"Start epoch: {epoch} training.")
             
             eval_period = self.train_params['updates_per_epoch'] // 4
-            prog_bar = tqdm(enumerate(self.train_dataloaders), total=self.train_params['updates_per_epoch'], leave=True)
+            prog_bar = tqdm(enumerate(self.train_dataloaders), total=self.train_params['updates_per_epoch'], leave=True, disable=not self.accel.is_local_main_process)
             for batch_idx, batch in prog_bar:
-
                 self.train_params['current_batch_idx'] = batch_idx
-                prev_optim_steps = current_optim_steps
-
-                # update
-                self.prev_optim_steps = prev_optim_steps
-                self.train_step(batch)
-
-                current_optim_steps = self._get_and_validate_current_optim_steps()
-                
-                last_lr = {}
-                for module_name in self.model_names:
-                    last_lr[module_name] = self.lr_schedulers[module_name].get_last_lr()[0]
-
+                with self.accel.accumulate(self.model): self.train_step(batch)
+                last_lr = self.lr_scheduler.get_last_lr()[0]
                 loss_list = [obj.val for _, obj in self.train_loss.losses.items()]
                 total_loss = sum(loss_list) / len(loss_list)
                 desc = f"|Epochs[{epoch+1}]|[{batch_idx+1}/{self.train_params['updates_per_epoch']}]|"
-                desc += f"LR[{', '.join([f'{val:.2e}' for _, val in last_lr.items()])}]|"
+                desc += f"LR[{', '.join([f'{last_lr:.2e}'])}]|"
                 desc += f"Loss[{total_loss:.2f}]|"
                 prog_bar.set_description(desc, refresh=True)
                 
-                if (self.opt['rank'] == 0) and self.opt['WANDB']:
+                if self.accel.is_main_process and self.opt['WANDB']:
                     # log for wandb
                     wb_loss_info = {key: obj.val for key, obj in self.train_loss.losses.items()}
                     wandb.log(wb_loss_info) #, step=self.train_params['updates_per_epoch'] * epoch + batch_idx
                     wandb.log({'Total-Loss': total_loss}) # LBK-Total-Loss log
-                    wandb.log({'Learning-Rate': self.lr_schedulers['default'].get_last_lr()[0]}) # LBK-LR log
+                    wandb.log({'Learning-Rate': self.lr_scheduler.get_last_lr()[0]}) # LBK-LR log
                     wandb.log({'Epoch': epoch+1}) # LBK-LR log
                     
                                     
                 if batch_idx in [eval_period, eval_period*2, eval_period*3]:
                     self.save_checkpoint(epoch+1)
                     results = self._eval_on_set()
-                    if self.opt['rank'] == 0: self.dictionary_display(results)
-                    if self.opt['rank'] == 0 and self.opt['WANDB']: wandb.log(results)
+                    if self.accel.is_main_process: self.dictionary_display(results)
+                    if self.accel.is_main_process and self.opt['WANDB']: wandb.log(results)
                 
             # evaluate and save ckpt every epoch
-            if self.opt['rank'] == 0: print('\n-----------Saving CKPT...-----------\n')
+            if self.accel.is_main_process: print('\n-----------Saving CKPT...-----------\n')
             self.save_checkpoint(epoch+1)
             results = self._eval_on_set()
-            if self.opt['rank'] == 0: self.dictionary_display(results)
-            if self.opt['rank'] == 0 and self.opt['WANDB']: wandb.log(results)
+            if self.accel.is_main_process: self.dictionary_display(results)
+            if self.accel.is_main_process and self.opt['WANDB']: wandb.log(results)

@@ -9,7 +9,7 @@ DATASETS:
   TRAIN: ["coco_2017_train_panoptic_filtall_with_sem_seg_caption_grounding"] # instruction_train / instp_train
   # open vocabulary segmentation evaluation.
   # TEST: ["ade20k_panoptic_val"]
-  TEST: ["vqav2_test-dev"]
+  TEST: ["refcocog_val_umd"]
   # TEST: ["ade20k_panoptic_val", "ade20k_full_sem_seg_val", "sunrgbd_37_val_seg", "scannet_21_val_seg", "scannet_21_panoptic_val", "scannet_41_val_seg", "cityscapes_fine_panoptic_val", "cityscapes_fine_instance_seg_val", "cityscapes_fine_sem_seg_val", "bdd10k_val_sem_seg", "bdd10k_40_panoptic_val"]
   # Supervised metrics evaluation.
   # TEST: ["coco_2017_val_panoptic_with_sem_seg", "vlp_captioning_val", "refcocog_val_umd", "vlp_val"]
@@ -18,11 +18,12 @@ DATASETS:
 
 # CuLLaVO LLM
 LLM:
-  LOAD_LLM: true
-  BITS: 8
+  LOAD_LLM: false # LLM
+  BITS: 8 # bit quantization
+  GRAD_CUM: 1 # Gradient Accumulation
 
 # Define Test/Trainer/Saving
-PIPELINE: XDecoderPipeline #XDecoderPipeline/RefCOCOPipeline/COCOCaptionPipeline/LLaVAVQAPipeline/BakLLaVAVQAPipeline/LLaVAVQAPipeline_TEST/BLIP2VQAPipeline/InstructBLIPVQAPipeline/KOSMOS2VQAPipeline
+PIPELINE: RefCOCOPipeline #XDecoderPipeline/RefCOCOPipeline/COCOCaptionPipeline/LLaVAVQAPipeline/BakLLaVAVQAPipeline/LLaVAVQAPipeline_TEST/BLIP2VQAPipeline/InstructBLIPVQAPipeline/KOSMOS2VQAPipeline
 TRAINER: xdecoder
 SAVE_DIR: '/mnt/ssd/lbk-cvpr/CuLLaVO'
 base_path: "./"
@@ -39,10 +40,6 @@ WANDB: False
 LOG_EVERY: 100
 FIND_UNUSED_PARAMETERS: false
 
-# Speed up training
-FP16: false
-PORT: '36873'
-
 # misc
 LOADER:
   JOINT: True
@@ -53,7 +50,7 @@ LOADER:
 ##################
 VERBOSE: true
 MODEL:
-  NAME: cullavo_model
+  NAME: xdecoder_model # xdecoder_model (X-decoder model TEST) / cullavo_model (TRAIN/Test/Test-VLModel)
   HEAD: xdecoder_head
   MASK_ON: false
   KEYPOINT_ON: false

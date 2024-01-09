@@ -60,7 +60,7 @@ class LLaVAVQAPipeline_TEST:
                 
             # temp solution for lr scheduler
             steps_total = len(self.train_loader)
-            steps_acc = self._opt['GRADIENT_ACCUMULATE_STEP']
+            steps_acc = self._opt['LLM']['GRAD_CUM']
             steps_update = steps_total // steps_acc
             self._opt["LR_SCHEDULER_PARAMS"]["steps_update_per_epoch"] = steps_update
         return dataloader
@@ -90,7 +90,7 @@ class LLaVAVQAPipeline_TEST:
         scores = {}
         
         # LLaVA 8Bit compression
-        llava_model = LBK.from_pretrained(LLAVA_LOCAL_PATH, load_in_8bit=True, device_map=self._opt['rank'], torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2")
+        llava_model = LBK.from_pretrained(LLAVA_LOCAL_PATH, load_in_8bit=True, torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2")
         llava_processor = AutoProcessor.from_pretrained(LLAVA_LOCAL_PATH)
         self.eval_freeze(llava_model)
         
@@ -98,14 +98,16 @@ class LLaVAVQAPipeline_TEST:
             torch.cuda.empty_cache()
             eval_batch_gen = self.get_dataloaders(trainer, dataset_label, is_evaluation=True)
             self.evaluator_total.reset()
+            
+            # accelerate wrapping
+            llava_model, eval_batch_gen = trainer.accel.prepare(llava_model, eval_batch_gen)
+            llava_model = llava_model.module # DDP
+            
             with torch.no_grad():
-                prog_bar = tqdm(enumerate(eval_batch_gen), total=len(eval_batch_gen), leave=True)
+                prog_bar = tqdm(enumerate(eval_batch_gen), total=len(eval_batch_gen), leave=True, disable=not trainer.accel.is_local_main_process)
                 for idx, batch in prog_bar:
 
-                    batch = move_batch_to_device(batch, self._opt['device'])
-                    if self._opt['FP16']:
-                        # in FP16 mode, DeepSpeed casts the model to FP16, so the input needs to be manually casted to FP16
-                        batch = cast_batch_to_half(batch)
+                    batch = move_batch_to_device(batch, trainer.accel.device)
 
                     # Visualization
                     # a = batch[0]['image'].permute(1,2,0).cpu().numpy()
@@ -119,7 +121,7 @@ class LLaVAVQAPipeline_TEST:
                         
                         # Generate
                         with torch.inference_mode():
-                            generate_ids = llava_model.generate(**{k:v.cuda() for k,v in llava_inputs.items()}, do_sample=False, temperature=0, max_new_tokens=128, use_cache=True)
+                            generate_ids = llava_model.generate(**{k:v.to(trainer.accel.device) for k,v in llava_inputs.items()}, do_sample=False, temperature=0, max_new_tokens=128, use_cache=True)
                         decoded_text = llava_processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].split('ASSISTANT:')[-1].strip()
 
                         # VQA evaluate process

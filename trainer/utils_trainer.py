@@ -40,60 +40,45 @@ class UtilsTrainer(DistributedTrainer):
     def __init__(self, opt):
         super().__init__(opt)
 
-    def is_gradient_accumulation_boundary(self):
-        return (self.train_params['num_updates'] + 1) % self.grad_acc_steps == 0
-
-    def get_batch_size(self, batch, module_name='default'):
-        if hasattr(self.raw_models[module_name], 'get_batch_size'):
-            if callable(self.raw_models[module_name].get_batch_size):
-                return self.raw_models[module_name].get_batch_size(batch)
+    def get_batch_size(self, batch):
+        if hasattr(self.model, 'get_batch_size'):
+            if callable(self.model.get_batch_size):
+                return self.model.get_batch_size(batch)
         return {}
 
-    def _initialize_ddp(self):
-        if self.opt['FP16']:
-            from torch.cuda.amp import GradScaler
-            self.grad_scaler = GradScaler()
-            # logger.warning("PyTorch AMP GradScaler initialized.")
-
-        for module_name in self.model_names:
-            if self.opt['world_size'] > 1:
-                # ddp: wrap modules for distributed data parallel training
-                self.models[module_name] = nn.parallel.DistributedDataParallel(self.models[module_name],
-                                                        device_ids=[self.opt['local_rank']],
-                                                        output_device=self.opt['local_rank'],
-                                                        find_unused_parameters=self.opt.get('FIND_UNUSED_PARAMETERS', True))
-
-    def _get_and_validate_current_optim_steps(self):
-        current_optim_steps = set([self.train_params['optim_steps'][module_name] for module_name in self.model_names])
-        assert len(current_optim_steps) == 1, f"All modules should be at the same optim step: {self.train_params['optim_steps']}"
-        return next(iter(current_optim_steps))
+    def _initialize_accelerator(self):
+        self.accel_config['train_micro_batch_size_per_gpu'] = self.opt['COCO']['TRAIN']['BATCH_SIZE_PER_GPU']
+        # self.model = self.accel.prepare(self.model)
+        # self.optimizer = self.accel.prepare(self.optimizer)
+        # self.lr_scheduler = self.accel.prepare(self.lr_scheduler)
+        # self.train_dataloaders = self.accel.prepare(self.train_dataloaders)
+        
+        self.model, self.optimizer, self.lr_scheduler, self.train_dataloaders = \
+            self.accel.prepare(self.model, self.optimizer, self.lr_scheduler, self.train_dataloaders)
 
     def load_model(self, load_path):
-        for module_name in self.model_names:
-            self.raw_models[module_name] = self.raw_models[module_name].from_pretrained(load_path)
-            self.raw_models[module_name].to(self.opt['device'])
+        self.model = self.model.from_pretrained(load_path)
+        self.model.to(self.accel.device)
 
     def save_checkpoint(self, epoch):
         
         save_dir = self.save_folder
 
-        if self.opt['world_size'] > 1:
+        if torch.distributed.get_world_size() > 1:
             torch.distributed.barrier()
 
-        if self.opt['rank'] == 0:
+        if self.accel.is_main_process:
             os.makedirs(self.save_folder, exist_ok=True)
 
-        if self.opt['world_size'] > 1:
+        if torch.distributed.get_world_size() > 1:
             torch.distributed.barrier()
 
-        if self.opt['rank'] == 0:
+        if self.accel.is_main_process:
             os.makedirs(save_dir, exist_ok=True)
 
-        if self.opt['rank'] == 0:
-            for module_name in self.model_names:
-                module_save_dir = os.path.join(save_dir, module_name)
-                self.raw_models[module_name].save_pretrained(module_save_dir, epoch)
-            print(f'Saved!: {module_save_dir}')
+        if self.accel.is_main_process:
+            self.model.save_pretrained(save_dir, epoch)
+            print(f'Saved!: {save_dir}')
 
     def load_weight(self, checkpoint_path=None, must_exist=False):
         self.load_model(checkpoint_path)
@@ -102,35 +87,19 @@ class UtilsTrainer(DistributedTrainer):
     def load_checkpoint(self, checkpoint_path=None, must_exist=False):
         # logger.warning(f'Resuming checkpoint from {checkpoint_path}...')
 
-        for model_name in self.model_names:
-            model_load_path = os.path.join(checkpoint_path, model_name, 'module_training_states.pt')
-            state = torch.load(model_load_path, map_location=self.opt['device'])
+        model_load_path = os.path.join(checkpoint_path, 'module_training_states.pt')
+        state = torch.load(model_load_path, map_location=self.accel.device)
+        
+        # logger.warning(f'HACK to strip module from model state dict on single gpu debugging!')
+        ckpt = state['module']
+        if get_world_size() <= 1:
+            ckpt = {key.replace('module.',''):ckpt[key] for key in ckpt.keys()}
             
-            # logger.warning(f'HACK to strip module from model state dict on single gpu debugging!')
-            ckpt = state['module']
-            if get_world_size() <= 1:
-                ckpt = {key.replace('module.',''):ckpt[key] for key in ckpt.keys()}
-                
-            self.models[model_name].load_state_dict(ckpt)
-            self.optimizers[model_name].load_state_dict(state['optimizer'])
-            self.lr_schedulers[model_name].load_state_dict(state['lr_scheduler'])
-            if self.opt['FP16']:
-                self.grad_scaler.load_state_dict(state['amp_state'])
+        self.model.load_state_dict(ckpt)
+        self.optimizer.load_state_dict(state['optimizer'])
+        self.lr_scheduler.load_state_dict(state['lr_scheduler'])
 
         load_path = os.path.join(checkpoint_path, 'trainer_states.pt')
         trainer_state = torch.load(load_path, map_location='cpu')
         self.train_loss = trainer_state['train_loss']
         self.train_params = trainer_state['train_params']
-
-        random_state_path = os.path.join(checkpoint_path, f"random_state_rank_{self.opt['rank']:04d}")
-        if os.path.exists(random_state_path):
-            random_state = torch.load(random_state_path, map_location='cpu')
-            random.setstate(random_state['random'])
-            np.random.set_state(random_state['numpy_random'])
-            torch.set_rng_state(random_state['torch_random'])
-            if self.opt['CUDA']:
-                torch.cuda.set_rng_state(random_state['torch_cuda_random'], device=self.opt['device'])
-        else:
-            logging.warning("Could not find random state for rank {}".format(self.opt['rank']))
-
-        logger.warning(f'Finished loading checkpoint from {checkpoint_path}.')

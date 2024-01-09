@@ -310,7 +310,7 @@ class GeneralizedXdecoder(nn.Module):
             elif mode == 'classification':
                 return self.evaluate_classification(batched_inputs)
             elif mode == 'grounding_refcoco':
-                return self.evaluate_grounding(batched_inputs, mode)
+                return self.evaluate_grounding(batched_inputs)
             else:
                 return self.evaluate(batched_inputs)
 

@@ -70,7 +70,6 @@ class VLPreDatasetMapper:
         image_format,
         tokenizer=None,
         max_token_num=None,
-        device=None,
     ):
         """
         NOTE: this interface is experimental.
@@ -95,7 +94,6 @@ class VLPreDatasetMapper:
 
         self.tokenizer = tokenizer
         self.max_token_num = max_token_num
-        self.device = device
 
     @classmethod
     def from_config(cls, cfg, is_train=True, dataset_name=None):
@@ -104,7 +102,6 @@ class VLPreDatasetMapper:
 
         tokenizer = build_tokenizer(cfg['MODEL']['TEXT'])
         max_token_num = cfg['MODEL']['TEXT']['CONTEXT_LENGTH']
-        device = cfg['device']
 
         ret = {
             "is_train": is_train,
@@ -113,7 +110,6 @@ class VLPreDatasetMapper:
             "image_format": cfg['INPUT']['FORMAT'],
             "tokenizer": tokenizer,
             "max_token_num": max_token_num,
-            "device": device,
         }
         return ret
 

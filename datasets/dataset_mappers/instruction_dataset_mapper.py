@@ -74,7 +74,6 @@ class InstructionDatasetMapper:
         image_format,
         tokenizer=None,
         max_token_num=None,
-        device=None,
     ):
         """
         NOTE: this interface is experimental.
@@ -99,7 +98,6 @@ class InstructionDatasetMapper:
 
         self.tokenizer = tokenizer
         self.max_token_num = max_token_num
-        self.device = device
 
     @classmethod
     def from_config(cls, cfg, is_train=True, dataset_name=None):
@@ -108,7 +106,6 @@ class InstructionDatasetMapper:
 
         tokenizer = build_tokenizer(cfg['MODEL']['TEXT'])
         max_token_num = 1024
-        device = cfg['device']
 
         ret = {
             "is_train": is_train,
@@ -117,7 +114,6 @@ class InstructionDatasetMapper:
             "image_format": cfg['INPUT']['FORMAT'],
             "tokenizer": tokenizer,
             "max_token_num": max_token_num,
-            "device": device,
         }
         return ret
 

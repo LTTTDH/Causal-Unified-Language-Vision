@@ -191,7 +191,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
     def label_generator(self, input_ids):
         add_point = 24*24-1
         labels = torch.ones_like(input_ids) * self.config.ignore_index
-        image_labels = torch.ones([input_ids.shape[0], add_point]).cuda() * self.config.ignore_index
+        image_labels = torch.ones([input_ids.shape[0], add_point]) * self.config.ignore_index
         labels = torch.cat([labels, image_labels], dim=1).to(torch.int64)
         x_gens, y_gens = torch.where(input_ids == 32002) # <GEN>
         x_gen_ends, y_gen_ends = torch.where(input_ids == 32003) # </GEN>
@@ -285,7 +285,8 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 _box = list(map(lambda x: round(x, 3), box.tolist()))
                 _seq = self.mask2seq(small_mask)
                 # _mask = self.seq2mask(_seq) # Recover Mask
-                cullavo_prompt+=f"<CLASS>{cls}</CLASS><BOX>{_box}</BOX><INST>{self.seq2string(_seq)}</INST>"
+                # cullavo_prompt+=f"<CLASS>{cls}</CLASS><BOX>{_box}</BOX><INST>{self.seq2string(_seq)}</INST>"
+                cullavo_prompt+=f"<CLASS>{cls}</CLASS><BOX>{_box}</BOX>"
             
             # cullavo prompt ending
             cullavo_prompt+="</GEN>\n"
@@ -323,7 +324,8 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                     _box = list(map(lambda x: round(x, 3), box.tolist()))
                     _seq = self.mask2seq(small_mask)
                     # _mask = self.seq2mask(_seq) # Recover Mask
-                    cullavo_prompt+=f"<SET>{text}</SET><GRD><CLASS>{cls}</CLASS><BOX>{_box}</BOX><INST>{self.seq2string(_seq)}</INST></GRD>\n"
+                    # cullavo_prompt+=f"<SET>{text}</SET><GRD><CLASS>{cls}</CLASS><BOX>{_box}</BOX><INST>{self.seq2string(_seq)}</INST></GRD>\n"
+                    cullavo_prompt+=f"<SET>{text}</SET><GRD><CLASS>{cls}</CLASS><BOX>{_box}</BOX></GRD>\n"
             
             # making batched cullavo prompt
             batched_cullavo_prompt.append(cullavo_prompt)
@@ -333,14 +335,14 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         processor(text=batched_cullavo_prompt, images=torch.stack([input['image'] for input in inputs]), padding=True, return_tensors="pt")
         
         # [1] input_ids
-        input_ids = cullavo_inputs.input_ids.cuda()
+        input_ids = cullavo_inputs.input_ids
         
         # [2] pixel values
-        pixel_values = cullavo_inputs.pixel_values.cuda()
+        pixel_values = cullavo_inputs.pixel_values
         
         # [3] attention_mask
-        attention_mask = cullavo_inputs.attention_mask.cuda()
-        
+        attention_mask = cullavo_inputs.attention_mask
+                
         # [4] labels
         labels = self.label_generator(input_ids)
 

@@ -42,15 +42,10 @@ class RefCOCOPipeline:
         self.data_classes = COCO_SEMANTIC_CLASSES
 
     def initialize_model(self):
-        model_name = "default"
         model = build_model(self._opt)
         model.train()
-
-        # if is_main_process():
-        #     logger.info(model)
-
-        raw_models = {model_name: BaseModel(self._opt, model)}
-        return raw_models
+        model = BaseModel(self._opt, model)
+        return model
 
     def get_dataloaders(
         self, trainer: DefaultTrainer,
@@ -78,36 +73,10 @@ class RefCOCOPipeline:
                 
             # temp solution for lr scheduler
             steps_total = len(self.train_loader)
-            steps_acc = self._opt['GRADIENT_ACCUMULATE_STEP']
+            steps_acc = self._opt['LLM']['GRAD_CUM']
             steps_update = steps_total // steps_acc
             self._opt["LR_SCHEDULER_PARAMS"]["steps_update_per_epoch"] = steps_update
         return dataloader
-
-    @staticmethod
-    def forward_func(trainer, batch):
-        loss = trainer.models['default'](batch)
-        return loss
-
-    def forward_step(
-        self,
-        trainer: DefaultTrainer,
-        batch,
-        grad_acc_batches: List,
-        grad_acc_index: int,
-        is_distributed: bool,
-    ) -> Tuple[Dict[str, float], Dict[str, int], Dict]:
-        loss_info, sample_size_info, extra_info = {}, {}, {}
-        batch = move_batch_to_device(batch, self._opt['device'])
-        if self._opt['FP16']:
-            # in FP16 mode, DeepSpeed casts the model to FP16, so the input needs to be manually casted to FP16
-            batch = cast_batch_to_half(batch)
-        loss = trainer.compute_loss(self.forward_func, batch)
-        loss_info = {k: v.detach().item() for k,v in loss.items()}
-        sample_size_info = {'num_samples': len(batch)}
-        loss = sum(loss for loss in loss.values())
-        trainer.backward_loss(loss, model_names=['default'])
-        trainer.update_model(model_name='default')
-        return loss_info, sample_size_info, extra_info
 
     @staticmethod
     def all_gather(data, world_size):
@@ -120,7 +89,7 @@ class RefCOCOPipeline:
         trainer: DefaultTrainer,
     ) -> Tuple[Dict, Dict[str, float], bool]:
 
-        model = trainer.raw_models['default'].eval()
+        model = trainer.model.eval()
         self._opt = hook_opt(self._opt)
         dataset_names = self._opt['DATASETS']['TEST']
         scores = {}
@@ -129,7 +98,7 @@ class RefCOCOPipeline:
         n_image_list = [0 for _ in range(len(self.data_classes))]
         
         # CSV
-        if self._opt['rank'] == 0:
+        if trainer.accel.is_main_process:
             import csv
             with open("problem_experiment/ref_coco.csv", "w") as f:
                 csv_writer = csv.writer(f)
@@ -140,6 +109,11 @@ class RefCOCOPipeline:
             eval_batch_gen = self.get_dataloaders(trainer, dataset_label, is_evaluation=True)
             for x in self.evaluator: x.reset()
             self.evaluator_total.reset()
+            
+            # accelerate wrapping
+            model, eval_batch_gen = trainer.accel.prepare(model, eval_batch_gen)
+            model = model.module # DDP
+            
             with torch.no_grad():
                 names = get_class_names(dataset_label)
                 model.model.metadata = MetadataCatalog.get(dataset_label)
@@ -149,12 +123,9 @@ class RefCOCOPipeline:
                     model.model.sem_seg_head.num_classes = len(names) - 1
                 model.model.sem_seg_head.predictor.lang_encoder.get_text_embeddings(names, is_eval=True)
                 hook_switcher(model, dataset_label)
-                prog_bar = tqdm(enumerate(eval_batch_gen), total=len(eval_batch_gen), leave=True)
+                prog_bar = tqdm(enumerate(eval_batch_gen), total=len(eval_batch_gen), leave=True, disable=not trainer.accel.is_local_main_process)
                 for idx, batch in prog_bar:
-                    batch = move_batch_to_device(batch, self._opt['device'])
-                    if self._opt['FP16']:
-                        # in FP16 mode, DeepSpeed casts the model to FP16, so the input needs to be manually casted to FP16
-                        batch = cast_batch_to_half(batch)
+                    batch = move_batch_to_device(batch, trainer.accel.device)
 
                     # Model Prediction
                     outputs = model(batch, mode=eval_type)
@@ -176,19 +147,19 @@ class RefCOCOPipeline:
             new_n_image_list = []
             for x in n_image_list:
                 new_n_image_list.append(sum(self.all_gather(x, self._opt['world_size'])))
-            n_image_list = new_n_image_list     
+            n_image_list = new_n_image_list      
 
         # Class-wise Result Write on CSV
         if self._opt['world_size'] >1: dist.barrier()
         for i, x in enumerate(self.evaluator):
             if n_image_list[i]==0:
-                if self._opt['rank'] == 0:
+                if trainer.accel.is_main_process:
                     with open("problem_experiment/ref_coco.csv", "a+", newline='') as f:
                         csv_writer = csv.writer(f)
                         csv_writer.writerow([f'{self.data_classes[i]}'] + ['NaN']*7 + [n_image_list[i]])
             else:
                 results = x.evaluate()
-                if self._opt['rank'] == 0:
+                if trainer.accel.is_main_process:
                     with open("problem_experiment/ref_coco.csv", "a+", newline='') as f:
                         csv_writer = csv.writer(f)
                         csv_writer.writerow([f'{self.data_classes[i]}'] + [v for v in results['grounding'].values()] + [n_image_list[i]])
@@ -196,7 +167,7 @@ class RefCOCOPipeline:
         
         # Total Result Write on CSV
         results = self.evaluator_total.evaluate()
-        if self._opt['rank'] == 0:
+        if trainer.accel.is_main_process:
             with open("problem_experiment/ref_coco.csv", "a+", newline='') as f:
                 csv_writer = csv.writer(f)
                 csv_writer.writerow(['ALL'] + [v for v in results['grounding'].values()] + [sum(n_image_list)])
