@@ -127,6 +127,9 @@ class RefCOCOPipeline:
                 for idx, batch in prog_bar:
                     batch = move_batch_to_device(batch, trainer.accel.device)
 
+                    # Visualization
+                    # a = batch[0]['image'].permute(1,2,0).cpu().numpy()
+
                     # Model Prediction
                     outputs = model(batch, mode=eval_type)
                     

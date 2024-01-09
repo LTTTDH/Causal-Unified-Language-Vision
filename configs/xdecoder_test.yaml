@@ -1,24 +1,19 @@
-NAME: cullavo_step1.yaml
+NAME: xdecoder_test.yaml
 
 DATASETS:
-  TRAIN: ["coco_2017_train_panoptic_filtall_with_sem_seg_caption_grounding"] # instruction_train / instp_train
-  # open vocabulary segmentation evaluation.
-  # TEST: ["ade20k_panoptic_val"]
+  TRAIN: ["coco_2017_train_panoptic_filtall_with_sem_seg_caption_grounding"]
   TEST: ["refcocog_val_umd"]
-  # TEST: ["ade20k_panoptic_val", "ade20k_full_sem_seg_val", "sunrgbd_37_val_seg", "scannet_21_val_seg", "scannet_21_panoptic_val", "scannet_41_val_seg", "cityscapes_fine_panoptic_val", "cityscapes_fine_instance_seg_val", "cityscapes_fine_sem_seg_val", "bdd10k_val_sem_seg", "bdd10k_40_panoptic_val"]
-  # Supervised metrics evaluation.
-  # TEST: ["coco_2017_val_panoptic_with_sem_seg", "vlp_captioning_val", "refcocog_val_umd", "vlp_val"]
   SIZE_DIVISIBILITY: 32
   PROPOSAL_FILES_TRAIN: []
 
 # CuLLaVO LLM
 LLM:
-  LOAD_LLM: true # LLM
+  LOAD_LLM: false # LLM
   BITS: 8 # bit quantization
   GRAD_CUM: 1 # Gradient Accumulation
 
 # Define Test/Trainer/Saving
-PIPELINE: XDecoderPipeline #XDecoderPipeline/RefCOCOPipeline/COCOCaptionPipeline/LLaVAVQAPipeline/BakLLaVAVQAPipeline/LLaVAVQAPipeline_TEST/BLIP2VQAPipeline/InstructBLIPVQAPipeline/KOSMOS2VQAPipeline
+PIPELINE: RefCOCOPipeline #RefCOCOPipeline/COCOCaptionPipeline
 TRAINER: xdecoder
 SAVE_DIR: '/mnt/ssd/lbk-cvpr/CuLLaVO'
 base_path: "./"
@@ -32,13 +27,12 @@ EVAL_AT_START: False
 
 # Logging and Debug
 WANDB: False
-
 ##################
 # Task settings
 ##################
 VERBOSE: true
 MODEL:
-  NAME: cullavo_model # xdecoder_model (X-decoder model TEST) / cullavo_model (TRAIN/Test/Test-VLModel)
+  NAME: xdecoder_model # xdecoder_model (X-decoder model TEST) / cullavo_model (TRAIN/Test/Test-VLModel)
   HEAD: xdecoder_head
   MASK_ON: false
   KEYPOINT_ON: false
@@ -100,14 +94,14 @@ MODEL:
       CLASS_WEIGHT: 0.5
     DETECTION: False
     CAPTION:
-      ENABLED: True
+      ENABLED: False
       PHRASE_PROB: 0.0
       SIM_THRES: 0.95
     CAPTIONING:
-      ENABLED: True
+      ENABLED: False
       STEP: 50
     RETRIEVAL:
-      ENABLED: True
+      ENABLED: False
       DIM_IMG: 1024
       ENSEMBLE: True
     DEEP_SUPERVISION: False

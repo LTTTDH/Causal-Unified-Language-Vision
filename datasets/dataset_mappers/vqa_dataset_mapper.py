@@ -1,14 +1,8 @@
-# --------------------------------------------------------
-# X-Decoder -- Generalized Decoding for Pixel, Image, and Language
-# Copyright (c) 2022 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
-# Modified by Xueyan Zou (xueyan@cs.wisc.edu)
-# --------------------------------------------------------
-# Copyright (c) Facebook, Inc. and its affiliates.
 import copy
 import logging
 
 import io
+import os
 from PIL import Image
 import numpy as np
 
@@ -30,7 +24,7 @@ from modeling.language.LangEncoder.mm_utils import tokenizer_image_token
 
 
 __all__ = ["VQADatasetMapper"]
-
+_root = os.getenv("DATASET2", "datasets") #may need a different root name?
 
 def build_transform_gen(cfg, is_train):
     """
@@ -49,7 +43,6 @@ def build_transform_gen(cfg, is_train):
     ])
     
     return augmentation
-
 
 # This is specifically designed for the COCO dataset.
 class VQADatasetMapper:
@@ -75,6 +68,9 @@ class VQADatasetMapper:
         *,
         tfm_gens,
         image_format,
+        tokenizer=None,
+        max_token_num=None,
+        num_classes=None,
     ):
         """
         NOTE: this interface is experimental.
@@ -97,26 +93,34 @@ class VQADatasetMapper:
 
         self.all_arrows = MetadataCatalog.get(dataset_name).arrows
 
+        self.tokenizer = tokenizer
+        self.max_token_num = max_token_num
+        self.num_classes = num_classes
 
     @classmethod
     def from_config(cls, cfg, is_train=True, dataset_name=None):
         # Build augmentation
         tfm_gens = build_transform_gen(cfg, is_train)
 
+        tokenizer = build_tokenizer(cfg['MODEL']['TEXT'])
+        max_token_num = 1024
 
         ret = {
             "is_train": is_train,
             "dataset_name": dataset_name,
             "tfm_gens": tfm_gens,
             "image_format": cfg['INPUT']['FORMAT'],
+            "tokenizer": tokenizer,
+            "max_token_num": max_token_num,
+            "num_classes": cfg['VQA']['INPUT']['NUM_CLASSES'],
         }
         return ret
 
-    def get_image(self, inp):
-        image_bytes = io.BytesIO(inp)
-        image_bytes.seek(0)
-        return Image.open(image_bytes)    
-    
+    def get_image(self, split, inp):
+        image_file = "VQAv2/{}/COCO_{}_".format(split, split) + '{0:012d}'.format(int(inp)) + ".jpg"
+        image = Image.open(os.path.join(_root, image_file)).convert('RGB')
+        return image
+        
     def __call__(self, dataset_dict):
         """
         Args:
@@ -126,19 +130,17 @@ class VQADatasetMapper:
             dict: a format that builtin models in detectron2 accept
         """
         dataset_dict = copy.deepcopy(dataset_dict)  # it will be modified by code below
-        arr = self.all_arrows[dataset_dict['arr_id']]
-        cur_id = dataset_dict['cur_id']
-        image = self.get_image(arr['image'][cur_id].as_py())
+        image = self.get_image(self.all_arrows[0]['data_subtype'], 
+                               self.all_arrows[0]['questions'][dataset_dict['cur_id']]['image_id'])
 
         image = utils._apply_exif_orientation(image)
         image = utils.convert_PIL_to_numpy(image, self.img_format)
         utils.check_image_size(dataset_dict, image)
 
-        image, transforms = T.apply_transform_gens(self.tfm_gens, image)
-        image_shape = image.shape[:2]  # h, w
+        # image, transforms = T.apply_transform_gens(self.tfm_gens, image)
 
         # Pytorch's dataloader is efficient on torch.Tensor due to shared-memory,
         # but not efficient on large generic data structures due to the use of pickle & mp.Queue.
         # Therefore it's important to use torch.Tensor.
-        dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))        
+        dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
         return dataset_dict

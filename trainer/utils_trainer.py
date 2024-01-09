@@ -6,30 +6,12 @@
 # --------------------------------------------------------
 
 from datetime import datetime
-import time
 import os
-import sys
-import importlib
-import json
-import random
 import logging
-import numpy as np
-import copy
-import contextlib
-import shutil
-from typing import Any, Callable, Union
 import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.optim.lr_scheduler as lr_scheduler
-from torch.utils.data import DataLoader
-from torch.utils.data.distributed import DistributedSampler
-from mpi4py import MPI
-from infinibatch import iterators
 
 from .distributed_trainer import DistributedTrainer
 from .utils.misc import *
-from .utils.serialization import JSONEncoder, filter_jsonable
 from utils.distributed import get_world_size
 
 logger = logging.getLogger(__name__)
@@ -47,12 +29,7 @@ class UtilsTrainer(DistributedTrainer):
         return {}
 
     def _initialize_accelerator(self):
-        self.accel_config['train_micro_batch_size_per_gpu'] = self.opt['COCO']['TRAIN']['BATCH_SIZE_PER_GPU']
-        # self.model = self.accel.prepare(self.model)
-        # self.optimizer = self.accel.prepare(self.optimizer)
-        # self.lr_scheduler = self.accel.prepare(self.lr_scheduler)
-        # self.train_dataloaders = self.accel.prepare(self.train_dataloaders)
-        
+        self.accel_config['train_micro_batch_size_per_gpu'] = self.opt['COCO']['TRAIN']['BATCH_SIZE_PER_GPU']        
         self.model, self.optimizer, self.lr_scheduler, self.train_dataloaders = \
             self.accel.prepare(self.model, self.optimizer, self.lr_scheduler, self.train_dataloaders)
 

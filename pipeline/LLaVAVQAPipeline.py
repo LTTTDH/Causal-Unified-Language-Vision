@@ -111,7 +111,7 @@ class LLaVAVQAPipeline:
         self.eval_freeze(clip_model)
         
         # CLIP Text
-        text_inputs = clip_processor(text=self.data_classes, return_tensors="pt", padding=True)
+        text_inputs = clip_processor(text=[f'a photo of {cl}' for cl in self.data_classes], return_tensors="pt", padding=True)
         text = clip_model.text_model(**{k:v.to(trainer.accel.device) for k, v in text_inputs.items()})[1]
         text = clip_model.text_projection(text)
         norm_text = F.normalize(text, dim=1)
@@ -134,9 +134,6 @@ class LLaVAVQAPipeline:
             
             # accelerate wrapping
             llama2_model, clip_model, llava_model, eval_batch_gen = trainer.accel.prepare(llama2_model, clip_model, llava_model, eval_batch_gen)
-            llama2_model = llama2_model.module # DDP
-            clip_model = clip_model.module # DDP
-            llava_model = llava_model.module # DDP
             
             with torch.no_grad():
                 prog_bar = tqdm(enumerate(eval_batch_gen), total=len(eval_batch_gen), leave=True, disable=not trainer.accel.is_local_main_process)
@@ -145,22 +142,24 @@ class LLaVAVQAPipeline:
                     batch = move_batch_to_device(batch, trainer.accel.device)
 
                     # Visualization
-                    # a = batch[0]['image'].flip(0).permute(1,2,0).cpu().numpy()
+                    # a = batch[0]['image'].permute(1,2,0).cpu().numpy()
                     
                     # LLAMA2
                     llama2_prompt = f"Choose object the question asks" +\
                                     "ex) what color is the man's shirt? shirt. " +\
                                     "ex) how many bikes have helmets? helmets. " +\
-                                    f"ex) where are the dogs looking at? dogs. ex) {batch[0]['captions'][0]}"
+                                    "ex) were there any books on the table? books. " +\
+                                    "ex) what is he on top of? he. " +\
+                                    f"ex) where are the dogs looking at? dogs. ex) {batch[0]['question']}"
                     llama2_inputs = llama2_tokenizer(llama2_prompt, return_tensors="pt")
 
                     # LLAMA2 In-Context Generation
                     with torch.inference_mode():
                         llama2_generate_ids = llama2_model.generate(llama2_inputs.input_ids.to(trainer.accel.device), max_new_tokens=10, do_sample=True, top_p=0.9, temperature=0.9, pad_token_id=llama2_tokenizer.eos_token_id)
-                    llama2_text = llama2_tokenizer.batch_decode(llama2_generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0][len(llama2_prompt):].strip()                    
+                    llama2_text = llama2_tokenizer.batch_decode(llama2_generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0][len(llama2_prompt):].strip().split('.')[0]                    
 
                     # CLIP Text
-                    text_inputs = clip_processor(text=llama2_text.split('.')[0], return_tensors="pt", padding=True)
+                    text_inputs = clip_processor(text=f'a photo of {llama2_text}', return_tensors="pt", padding=True)
                     text_embed = clip_model.text_model(**{k:v.to(trainer.accel.device) for k, v in text_inputs.items()})[1]
                     text_embed = clip_model.text_projection(text_embed)
                     norm_text_embed = F.normalize(text_embed, dim=1)
@@ -173,8 +172,8 @@ class LLaVAVQAPipeline:
                     # LLaVA Process
                     prompt = ["A chat between a curious human and an artificial intelligence assistant. "
                               "The assistant gives helpful, detailed, and polite answers to the human's questions. "
-                              f"<image>\nUSER:{b['captions'][0]}\nAnswer the question using a single word or phrase.\nASSISTANT:" for b in batch]
-                    llava_inputs = llava_processor(text=prompt, images=torch.stack([b['image'] for b in batch]), return_tensors="pt")
+                              f"<image>\nUSER:{batch[0]['question']}\nAnswer the question using a single word or phrase.\nASSISTANT:"]
+                    llava_inputs = llava_processor(text=prompt, images=batch[0]['image'], return_tensors="pt")
                     
                     # Generate
                     with torch.inference_mode():
@@ -182,8 +181,8 @@ class LLaVAVQAPipeline:
                     decoded_text = llava_processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].split('ASSISTANT:')[-1].strip()
 
                     # VQA evaluate process
-                    self.evaluator[clip_index[0]].process(batch, {'question_id': batch[0]["question_ids"][0], 'text': decoded_text})
-                    self.evaluator_total.process(batch, {'question_id': batch[0]["question_ids"][0], 'text': decoded_text})
+                    self.evaluator[clip_index[0]].process(batch, {'question_id': batch[0]["question_id"], 'text': decoded_text})
+                    self.evaluator_total.process(batch, {'question_id': batch[0]["question_id"], 'text': decoded_text})
                     n_image_list[clip_index[0]] += 1
                     
                     # Fast Computation

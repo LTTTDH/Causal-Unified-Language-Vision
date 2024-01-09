@@ -66,7 +66,7 @@ def main(args=None):
             wandb.login(key='7e4ecf71a336d0afd0a00ca526195a1ae2f750ed')
             init_wandb(opt, trainer.save_folder, job_name=trainer.save_folder)
         trainer.train()
-    elif command == "evaluate":
+    elif command == "eval":
         if opt['rank'] == 0 and opt['WANDB']:
             wandb.login(key='7e4ecf71a336d0afd0a00ca526195a1ae2f750ed')
             init_wandb(opt, trainer.save_folder, job_name=trainer.save_folder)

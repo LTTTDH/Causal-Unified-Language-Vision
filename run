@@ -9,13 +9,10 @@ test_batch=1
 
 accelerate launch --config_file configs/accel/ddp_accel.yaml \
             --num_processes=$n_gpu \
-            lbk_entry.py train \
-            --conf_files configs/cullavo_step1.yaml \
+            lbk_entry.py eval \
+            --conf_files configs/vl_test.yaml \
             --overrides \
             WANDB False \
-            MODEL.DECODER.CAPTIONING_WEIGHT 8 \
-            MODEL.DECODER.RETRIEVAL_WEIGHT 8 \
-            MODEL.DECODER.TOP_GROUNDING_LAYERS 6 \
             COCO.TRAIN.BATCH_SIZE_TOTAL $((n_gpu * image_bath)) \
             COCO.TRAIN.BATCH_SIZE_PER_GPU $image_bath \
             COCO.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \

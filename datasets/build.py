@@ -263,7 +263,7 @@ def _train_loader_from_config(cfg, dataset_name, mapper, *, dataset=None, sample
         "dataset": dataset,
         "sampler": sampler,
         "mapper": mapper,
-        "total_batch_size": cfg['TRAIN']['BATCH_SIZE_TOTAL'],
+        "batch_size": cfg['TRAIN']['BATCH_SIZE_PER_GPU'],
         "aspect_ratio_grouping": cfg_dataloader['ASPECT_RATIO_GROUPING'],
         "num_workers": cfg_dataloader['NUM_WORKERS'],
     }
@@ -271,7 +271,7 @@ def _train_loader_from_config(cfg, dataset_name, mapper, *, dataset=None, sample
 
 @configurable(from_config=_train_loader_from_config)
 def build_detection_train_loader(
-    dataset, *, mapper, sampler=None, total_batch_size, aspect_ratio_grouping=True, num_workers=0
+    dataset, *, mapper, sampler=None, batch_size, aspect_ratio_grouping=True, num_workers=0
 ):
     """
     Build a dataloader for object detection with some default features.
@@ -307,13 +307,21 @@ def build_detection_train_loader(
     if sampler is None:
         sampler = TrainingSampler(len(dataset))
     assert isinstance(sampler, torch.utils.data.sampler.Sampler)
-    return build_batch_data_loader(
+    return torchdata.DataLoader(
         dataset,
-        # sampler, # accelerator
-        total_batch_size,
-        aspect_ratio_grouping=aspect_ratio_grouping,
+        batch_size=batch_size,
+        # sampler=sampler, # accelerator
+        drop_last=False,
         num_workers=num_workers,
+        collate_fn=trivial_batch_collator
     )
+    # return build_batch_data_loader(
+    #     dataset,
+    #     # sampler, # accelerator
+    #     total_batch_size,
+    #     aspect_ratio_grouping=aspect_ratio_grouping,
+    #     num_workers=num_workers,
+    # )
 
 
 def get_config_from_name(cfg, dataset_name):

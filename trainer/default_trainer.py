@@ -6,32 +6,16 @@
 # --------------------------------------------------------
 
 from datetime import datetime
-import time
 import os
 import sys
 import importlib
-import json
-import random
 import wandb
 import logging
-import numpy as np
-import copy
-import contextlib
-import shutil
-from typing import Any, Callable, Union
 import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.optim.lr_scheduler as lr_scheduler
-from torch.utils.data import DataLoader
-from torch.utils.data.distributed import DistributedSampler
-from mpi4py import MPI
-from infinibatch import iterators
 
 from .distributed_trainer import DistributedTrainer
 from .utils_trainer import UtilsTrainer
 from .utils.misc import *
-from .utils.serialization import JSONEncoder, filter_jsonable
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)

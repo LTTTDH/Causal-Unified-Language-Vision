@@ -130,7 +130,6 @@ class COCOCaptionPipeline:
             # accelerate wrapping
             model, clip_model, eval_batch_gen = trainer.accel.prepare(model, clip_model, eval_batch_gen)     
             model = model.module # DDP
-            clip_model = clip_model.module # DDP
             
             with torch.no_grad():
                 names = get_class_names(dataset_label)

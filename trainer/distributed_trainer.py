@@ -7,13 +7,9 @@
 
 import os
 import logging
-from mpi4py import MPI
-
 import torch
 
 from .utils.hook import add_hook
-from .utils.mpi_adapter import MPIAdapter
-from .utils.misc import save_opt_to_yaml
 
 # Accelerator
 from accelerate import Accelerator

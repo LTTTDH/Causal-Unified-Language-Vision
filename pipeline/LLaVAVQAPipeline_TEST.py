@@ -19,8 +19,7 @@ from infinibatch import iterators
 from trainer.default_trainer import DefaultTrainer
 
 from datasets import build_evaluator, build_eval_dataloader, build_train_dataloader
-from utils.constants import IMAGENET_CLASSES
-from trainer.utils.misc import move_batch_to_device, cast_batch_to_half
+from trainer.utils.misc import move_batch_to_device
 
 from .utils.misc import hook_opt
 import torch.distributed as dist
@@ -88,7 +87,7 @@ class LLaVAVQAPipeline_TEST:
         self._opt = hook_opt(self._opt)
         dataset_names = self._opt['DATASETS']['TEST']
         scores = {}
-        
+
         # LLaVA 8Bit compression
         llava_model = LBK.from_pretrained(LLAVA_LOCAL_PATH, load_in_8bit=True, torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2")
         llava_processor = AutoProcessor.from_pretrained(LLAVA_LOCAL_PATH)
@@ -101,7 +100,6 @@ class LLaVAVQAPipeline_TEST:
             
             # accelerate wrapping
             llava_model, eval_batch_gen = trainer.accel.prepare(llava_model, eval_batch_gen)
-            llava_model = llava_model.module # DDP
             
             with torch.no_grad():
                 prog_bar = tqdm(enumerate(eval_batch_gen), total=len(eval_batch_gen), leave=True, disable=not trainer.accel.is_local_main_process)
@@ -112,27 +110,23 @@ class LLaVAVQAPipeline_TEST:
                     # Visualization
                     # a = batch[0]['image'].permute(1,2,0).cpu().numpy()
                     
-                    for cap_idx in range(len(batch[0]['captions'])):
-                        # LLaVA Process
-                        prompt = ["A chat between a curious human and an artificial intelligence assistant. "
-                                "The assistant gives helpful, detailed, and polite answers to the human's questions. "
-                                f"<image>\nUSER:{batch[0]['captions'][cap_idx]}\nAnswer the question using a single word or phrase.\nASSISTANT:"]
-                        llava_inputs = llava_processor(text=prompt, images=torch.stack([b['image'] for b in batch]), return_tensors="pt")
-                        
-                        # Generate
-                        with torch.inference_mode():
-                            generate_ids = llava_model.generate(**{k:v.to(trainer.accel.device) for k,v in llava_inputs.items()}, do_sample=False, temperature=0, max_new_tokens=128, use_cache=True)
-                        decoded_text = llava_processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].split('ASSISTANT:')[-1].strip()
+                    # LLaVA Process
+                    prompt = ["A chat between a curious human and an artificial intelligence assistant. "
+                              "The assistant gives helpful, detailed, and polite answers to the human's questions. "
+                              f"<image>\nUSER:{batch[0]['question']}\nAnswer the question using a single word or phrase.\nASSISTANT:"]
+                    llava_inputs = llava_processor(text=prompt, images=batch[0]['image'], return_tensors="pt")
+                    
+                    # Generate
+                    with torch.inference_mode():
+                        generate_ids = llava_model.generate(**{k:v.to(trainer.accel.device) for k,v in llava_inputs.items()}, do_sample=False, temperature=0, max_new_tokens=128, use_cache=True)
+                    decoded_text = llava_processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].split('ASSISTANT:')[-1].strip()
 
-                        # VQA evaluate process
-                        self.evaluator_total.process(batch, {'question_id': batch[0]["question_ids"][cap_idx], 'text': decoded_text})
-
-        # DDP communication
-        if self._opt['world_size'] >1: dist.barrier()
-        
+                    # VQA evaluate process
+                    self.evaluator_total.process(batch, {'question_id': batch[0]["question_id"], 'text': decoded_text})
+                    
         # Total Result Write on CSV
         results = self.evaluator_total.evaluate()
-        return results
+        return scores
 
 
 from typing import List, Optional, Tuple, Union

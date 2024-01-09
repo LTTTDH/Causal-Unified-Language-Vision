@@ -134,9 +134,6 @@ class InstructBLIPVQAPipeline:
 
             # accelerate wrapping
             llama2_model, clip_model, instructblip_model, eval_batch_gen = trainer.accel.prepare(llama2_model, clip_model, instructblip_model, eval_batch_gen)
-            llama2_model = llama2_model.module # DDP
-            clip_model = clip_model.module # DDP
-            instructblip_model = instructblip_model.module # DDP    
             
             with torch.no_grad():
                 prog_bar = tqdm(enumerate(eval_batch_gen), total=len(eval_batch_gen), leave=True, disable=not trainer.accel.is_local_main_process)
