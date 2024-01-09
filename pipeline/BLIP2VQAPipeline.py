@@ -148,7 +148,7 @@ class BLIP2VQAPipeline:
                     llama2_prompt = f"Choose object the question asks" +\
                                     "ex) what color is the man's shirt? shirt. " +\
                                     "ex) how many bikes have helmets? helmets. " +\
-                                    f"ex) where are the dogs looking at? dogs. ex) {batch[0]['captions'][0]}"
+                                    f"ex) where are the dogs looking at? dogs. ex) {batch[0]['caption']}"
                     llama2_inputs = llama2_tokenizer(llama2_prompt, return_tensors="pt")
 
                     # LLAMA2 In-Context Generation
@@ -168,8 +168,8 @@ class BLIP2VQAPipeline:
                     clip_index = clip_index[clip_value.argmax()]
                     
                     # BLIP2 Process
-                    prompt = [f"Question: {b['captions'][0]} Answer:" for b in batch]
-                    blip2_inputs = blip2_processor(text=prompt, images=torch.stack([b['image'] for b in batch]), return_tensors="pt")
+                    prompt = [f"Question: {batch[0]['question']} Answer:"]
+                    blip2_inputs = blip2_processor(text=prompt, images=batch[0]['image'], return_tensors="pt")
                     
                     # Generate
                     with torch.inference_mode():
@@ -177,8 +177,8 @@ class BLIP2VQAPipeline:
                     decoded_text = blip2_processor.batch_decode(generate_ids, skip_special_tokens=True)[0].strip()
                     
                     # VQA evaluate process
-                    self.evaluator[clip_index[0]].process(batch, {'question_id': batch[0]["question_ids"][0], 'text': decoded_text})
-                    self.evaluator_total.process(batch, {'question_id': batch[0]["question_ids"][0], 'text': decoded_text})
+                    self.evaluator[clip_index[0]].process(batch, {'question_id': batch[0]["question_id"], 'text': decoded_text})
+                    self.evaluator_total.process(batch, {'question_id': batch[0]["question_id"], 'text': decoded_text})
                     n_image_list[clip_index[0]] += 1
                     
                     # Fast Computation
