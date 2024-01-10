@@ -8,10 +8,10 @@ image_bath=1
 test_batch=1
 
 CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
-            accelerate launch --config_file configs/accel/deepspeed_accel.yaml \
+            accelerate launch --config_file configs/accel/ddp_accel.yaml \
             --num_processes=$n_gpu \
-            lbk_entry.py train \
-            --conf_files configs/cullavo_step1.yaml \
+            lbk_entry.py eval \
+            --conf_files configs/vl_test.yaml \
             --overrides \
             WANDB False \
             COCO.TRAIN.BATCH_SIZE_TOTAL $((n_gpu * image_bath)) \

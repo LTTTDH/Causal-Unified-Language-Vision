@@ -113,7 +113,7 @@ class LLaVAVQAPipeline_TEST:
                     # LLaVA Process
                     prompt = ["A chat between a curious human and an artificial intelligence assistant. "
                               "The assistant gives helpful, detailed, and polite answers to the human's questions. "
-                              f"<image>\nUSER:{batch[0]['question']}\nAnswer the question using a single word or phrase.\nASSISTANT:"]
+                              f"USER: <image>\n{batch[0]['question']}\nAnswer the question using a single word or phrase. ASSISTANT:"]
                     llava_inputs = llava_processor(text=prompt, images=batch[0]['image'], return_tensors="pt")
                     
                     # Generate
