@@ -41,14 +41,16 @@ def main(args=None):
     trainer = Trainer(opt)
     
     if command == "train":
-        if opt['rank'] == 0 and opt['WANDB']:
+        if trainer.accel.is_main_process and opt['WANDB']:
             wandb.login(key='7e4ecf71a336d0afd0a00ca526195a1ae2f750ed')
             init_wandb(opt, trainer.save_folder, job_name=trainer.save_folder)
+        trainer.accel.wait_for_everyone()
         trainer.train()
     elif command == "eval":
-        if opt['rank'] == 0 and opt['WANDB']:
+        if trainer.accel.is_main_process and opt['WANDB']:
             wandb.login(key='7e4ecf71a336d0afd0a00ca526195a1ae2f750ed')
             init_wandb(opt, trainer.save_folder, job_name=trainer.save_folder)
+        trainer.accel.wait_for_everyone()
         trainer.eval()
     else:
         raise ValueError(f"Unknown command: {command}")
