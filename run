@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 
 # VLP - Stage1 (Pretrained)
-GPU_DEVICE="0,1,2,3"
+GPU_DEVICE="1,2,3,4,5,6,7"
 length=${#GPU_DEVICE}
 n_gpu=$(((length+1)/2))
 image_bath=1
 test_batch=1
 
-accelerate launch --config_file configs/accel/deepspeed_accel.yaml \
+CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
+            accelerate launch --config_file configs/accel/deepspeed_accel.yaml \
             --num_processes=$n_gpu \
             lbk_entry.py train \
             --conf_files configs/cullavo_step1.yaml \
