@@ -50,24 +50,6 @@ from .evaluation import (InstanceSegEvaluator,
 from modeling.utils import configurable
 from utils.distributed import get_world_size
 
-class JointLoader(torchdata.IterableDataset):
-    def __init__(self, loaders):
-        dataset_names = []
-        self.name_list = []
-        for key, loader in loaders.items():
-            name = "{}".format(key.split('_')[0])
-            self.name_list.append(name)
-            setattr(self, name, loader)
-            dataset_names += [name]
-        self.dataset_names = dataset_names
-    
-    def __iter__(self):
-        for batch in zip(*[getattr(self, name) for name in self.dataset_names]):
-            yield {key: batch[i] for i, key in enumerate(self.dataset_names)}
-
-    def __len__(self):
-        return len(getattr(self, self.name_list[0]))
-
 def filter_images_with_only_crowd_annotations(dataset_dicts, dataset_names):
     """
     Filter out images with none annotations or only crowd annotations
@@ -450,50 +432,49 @@ def build_eval_dataloader(cfg, ):
 def build_train_dataloader(cfg, ):
     dataset_names = cfg['DATASETS']['TRAIN']
     
-    loaders = {}
     for dataset_name in dataset_names:
         cfg = get_config_from_name(cfg, dataset_name)
         mapper_name = cfg['INPUT']['DATASET_MAPPER_NAME']
         # Semantic segmentation dataset mapper
         if mapper_name == "mask_former_semantic":
             mapper = MaskFormerSemanticDatasetMapper(cfg, True)
-            loaders['coco'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+            loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         # Panoptic segmentation dataset mapper
         elif mapper_name == "mask_former_panoptic":
             mapper = MaskFormerPanopticDatasetMapper(cfg, True)
-            loaders['coco'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+            loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         # Instance segmentation dataset mapper
         elif mapper_name == "mask_former_instance":
             mapper = MaskFormerInstanceDatasetMapper(cfg, True)
-            loaders['coco'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+            loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         # coco instance segmentation lsj new baseline
         elif mapper_name == "coco_instance_lsj":
             mapper = COCOInstanceNewBaselineDatasetMapper(cfg, True)
-            loaders['coco'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+            loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         # coco panoptic segmentation lsj new baseline
         elif mapper_name == "coco_panoptic_lsj":
             mapper = COCOPanopticNewBaselineDatasetMapper(cfg, True)
-            loaders['coco'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+            loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         elif mapper_name == "vlpretrain":
             mapper = VLPreDatasetMapper(cfg, True, dataset_name)
-            loaders['vlp'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+            loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         elif mapper_name == "refcoco":
             mapper = RefCOCODatasetMapper(cfg, True)
-            loaders['ref'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+            loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         elif mapper_name == "coco_interactive":
             mapper = COCOPanopticInteractiveDatasetMapper(cfg, True)
-            loaders['coco'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+            loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         elif mapper_name == "instruction_train":
             mapper = InstructionDatasetMapper(cfg, True, dataset_name)
-            loaders['instruction'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+            loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         elif mapper_name == "instp_train":
             mapper = InstPreDatasetMapper(cfg, True, dataset_name)
-            loaders['instp'] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+            loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         else:
             mapper = None
-            loaders[dataset_name] = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+            loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
 
-        return JointLoader(loaders)
+        return loaders
 
     
 def build_evaluator(cfg, dataset_name, output_folder=None):

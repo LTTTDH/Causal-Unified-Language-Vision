@@ -77,7 +77,7 @@ class CuLLaVOPipeline:
 
     @staticmethod
     def forward_func(trainer, batch):
-        loss = trainer.model(batch, device=trainer.accel.device)
+        loss = trainer.model(batch, trainer.accel)
         return loss
 
     def forward_step(

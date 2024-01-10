@@ -281,20 +281,20 @@ class GeneralizedXdecoder(nn.Module):
                     segments_info (list[dict]): Describe each segment in `panoptic_seg`.
                         Each dict contains keys "id", "category_id", "isthing".
         """
-        # a = batched_inputs['coco'][1]['image'].flip(0).permute(1,2,0).cpu().numpy()
-        # b = batched_inputs['coco'][1]['instances'].gt_masks[0].unsqueeze(2).cpu().numpy()
-        # c = batched_inputs['coco'][1]['groundings']['masks'][0].unsqueeze(2).cpu().numpy()
-        # for i in range(batched_inputs['coco'][1]['instances'].gt_masks.shape[0]):
-        #     a[torch.where(batched_inputs['coco'][1]['instances'].gt_masks[i].float() == 1)] = 128
+        # a = batched_inputs[1]['image'].flip(0).permute(1,2,0).cpu().numpy()
+        # b = batched_inputs[1]['instances'].gt_masks[0].unsqueeze(2).cpu().numpy()
+        # c = batched_inputs[1]['groundings']['masks'][0].unsqueeze(2).cpu().numpy()
+        # for i in range(batched_inputs[1]['instances'].gt_masks.shape[0]):
+        #     a[torch.where(batched_inputs[1]['instances'].gt_masks[i].float() == 1)] = 128
 
 
         if self.training:
             losses = {}
             if self.task_switch['mask']:
-                losses_seg = self.forward_seg(batched_inputs['coco'])
+                losses_seg = self.forward_seg(batched_inputs)
                 losses.update(losses_seg)
             if self.task_switch['retrieval'] or self.task_switch['captioning']:
-                losses_vlp = self.forward_vlp(batched_inputs['vlp'])
+                losses_vlp = self.forward_vlp(batched_inputs)
                 losses.update(losses_vlp)
             for k in list(losses.keys()):
                 if k in self.criterion.weight_dict:

@@ -17,8 +17,8 @@ import detectron2.utils.comm as comm
 from detectron2.evaluation.evaluator import DatasetEvaluator
 from collections import OrderedDict
 
-from llm.eval.vqa import VQA
-from llm.eval.vqaEval import VQAEval
+from cullavo.eval.vqav2.vqa import VQA
+from cullavo.eval.vqav2.vqaEval import VQAEval
 
 
 class VQAEvaluator(DatasetEvaluator):

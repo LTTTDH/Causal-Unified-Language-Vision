@@ -13,7 +13,6 @@ from .utils.hook import add_hook
 
 # Accelerator
 from accelerate import Accelerator
-from accelerate.state import AcceleratorState
 
 logger = logging.getLogger(__name__)
 
@@ -22,14 +21,9 @@ class DistributedTrainer:
     def __init__(self, opt):
         self.opt = opt
         self.accel = Accelerator(gradient_accumulation_steps=self.opt['LLM']['GRAD_CUM']) # Accelerator
-        try:
-            self.accel_config = AcceleratorState().deepspeed_plugin.deepspeed_config
-        except:
-            pass
-
+        
         # parse environment information for distributed training
         self.opt['world_size'] = torch.distributed.get_world_size()
-        self.opt['accel'] = self.accel
 
         self.set_opt_hook()
 
@@ -44,9 +38,6 @@ class DistributedTrainer:
 
             # logger.info(f"Save config file to {os.path.join(self.save_folder, 'conf_copy.yaml')}")
             # save_opt_to_yaml(self.opt, os.path.join(self.save_folder, 'conf_copy.yaml'))
-
-        # Gradient Accumulation
-        self.grad_acc_steps = self.opt['LLM']['GRAD_CUM']
 
         if torch.distributed.get_world_size() > 1:
             add_hook()
@@ -73,35 +64,11 @@ class DistributedTrainer:
         """
         Initialize the save folder for logs, model, checkpoint, and evaluation.
         """
-        runid = 1
 
         if torch.distributed.get_world_size() > 1:
             torch.distributed.barrier()
 
         if self.accel.is_main_process:
-            while True:
-                save_folder = os.path.join(self.opt['SAVE_DIR'], f"run_{runid}")
-                try:
-                    os.makedirs(save_folder, exist_ok=False)
-                    break
-                except FileExistsError:
-                    runid = runid + 1
+            os.makedirs(self.opt['SAVE_DIR'], exist_ok=True)
 
-        if torch.distributed.get_world_size() > 1:
-            torch.distributed.barrier()
-
-        if torch.distributed.get_world_size() > 1:
-            runid = 1
-            while True:
-                save_folder = os.path.join(self.opt['SAVE_DIR'], f"run_{runid}")
-                if not os.path.exists(save_folder):
-                    break
-                else:
-                    runid += 1
-
-            runid -= 1
-            save_folder = os.path.join(self.opt['SAVE_DIR'], f"run_{runid}")
-            # this second os.makedirs() call on all ranks is to force sync the save_folder creation between blobFuse and local fs
-            os.makedirs(save_folder, exist_ok=True)
-
-        self.save_folder = save_folder
+        self.save_folder = self.opt['SAVE_DIR']

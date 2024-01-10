@@ -251,6 +251,10 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         processor,
         device
     ):
+        
+        # fix num
+        fix_num = 20
+         
         # initialization
         input_ids = None
         pixel_values  = None
@@ -295,14 +299,13 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             if input['groundings']['mode']=='no text':
              
                 # cullavo prompt prefix
-                cullavo_prompt = "You are a unified vision oracle. "
-                cullavo_prompt += "If an image is given, you will predict classes, boxes, and binary masks in order on the image.\n"
+                cullavo_prompt = "If an image is given, you will predict classes, boxes, and binary masks in order on the image. "
                 # cullavo_prompt += "The output format of classes is string and it is located between <CLASS> and </CLASS>. "
                 # cullavo_prompt += "The output format of boxes is a list and it is located between <BOX> and </BOX>. "
                 # cullavo_prompt += "The output format of instances is a list with tuple and it is located between <INST> and </INST>.\n"
              
                 # cullavo prompt init
-                cullavo_prompt += "<image>\n<GEN>"
+                cullavo_prompt += "USER: <image>\n<GEN>"
                 
                 # CLASSES
                 classes = [COCO_PANOPTIC_CLASSES[c].replace('-merged','').replace('-other','').replace('-stuff','') for c in input['instances'].gt_classes]
@@ -320,7 +323,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 # sm = small_masks[0]
             
                 # Making cullavo prompt
-                for cls, box, small_mask, mask in zip(classes, boxes, small_masks, masks):
+                for cls, box, small_mask, mask in zip(classes[:fix_num], boxes[:fix_num], small_masks[:fix_num], masks[:fix_num]):
                     if small_masks.sum()==0: continue
                     _box = list(map(lambda x: round(x, 3), box.tolist()))
                     _seq = self.mask2seq(small_mask)
@@ -334,12 +337,11 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             elif input['groundings']['mode']=='text':
                 
                 # cullavo prompt prefix
-                cullavo_prompt = "You are a unified vision oracle. "
-                cullavo_prompt += "If you are given an image and a text, "                
-                cullavo_prompt += "then you will predict classes, boxes, and binary instance mask corresponding the given text in order on image.\n"
+                cullavo_prompt = "If an image and texts are given, "                
+                cullavo_prompt += "you will predict classes, boxes, and binary instance mask corresponding the given text in order on image. "
                 
                 # cullavo prompt init
-                cullavo_prompt += "<image>\n"
+                cullavo_prompt += "USER: <image>\n"
                 
                 # TEXTS
                 texts = [str(x) for x in input['groundings']['texts']]
@@ -362,7 +364,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 # s = small_masks[0]
                 
                 # Making cullavo prompt for vision grounding
-                for cls, box, small_mask, text in zip(classes, boxes, small_masks, texts):
+                for cls, box, small_mask, text in zip(classes[:fix_num], boxes[:fix_num], small_masks[:fix_num], texts[:fix_num]):
                     if small_masks.sum()==0: continue
                     _box = list(map(lambda x: round(x, 3), box.tolist()))
                     _seq = self.mask2seq(small_mask)
@@ -455,7 +457,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
 
                 image_features = self.multi_modal_projector(selected_image_feature)
                 inputs_embeds, attention_mask, position_ids = self._merge_input_ids_with_image_features(
-                    image_features, inputs_embeds, input_ids, attention_mask, position_ids
+                    image_features.to(torch.bfloat16), inputs_embeds, input_ids, attention_mask, position_ids
                 )
                 if labels is None:
                     labels = torch.full_like(attention_mask, self.config.ignore_index).to(torch.long)

@@ -109,10 +109,6 @@ class CuLLaVO(nn.Module):
         self.train_class_names = get_class_names(train_dataset_name)
 
         self.retrieval_emsemble = retrieval_emsemble
-        # backbone itc loss
-        if task_switch['retrieval'] and retrieval_emsemble:
-            self.backbone_proj = nn.Parameter(torch.empty(backbone_dim, dim_proj))
-            trunc_normal_(self.backbone_proj, std=.02)
 
         if not self.semantic_on:
             assert self.sem_seg_postprocess_before_inference
@@ -228,7 +224,7 @@ class CuLLaVO(nn.Module):
     def device(self):
         return self.pixel_mean.device
 
-    def forward(self, batched_inputs, device, mode=None):
+    def forward(self, batched_inputs, accel, mode=None):
         """
         Args:
             batched_inputs: a list, batched outputs of :class:`DatasetMapper`.
@@ -254,16 +250,16 @@ class CuLLaVO(nn.Module):
                     segments_info (list[dict]): Describe each segment in `panoptic_seg`.
                         Each dict contains keys "id", "category_id", "isthing".
         """
-        # a = batched_inputs['coco'][1]['image'].flip(0).permute(1,2,0).cpu().numpy()
-        # b = batched_inputs['coco'][1]['instances'].gt_masks[0].unsqueeze(2).cpu().numpy()
-        # c = batched_inputs['coco'][1]['groundings']['masks'][0].unsqueeze(2).cpu().numpy()
-        # for i in range(batched_inputs['coco'][1]['instances'].gt_masks.shape[0]):
-        #     a[torch.where(batched_inputs['coco'][1]['instances'].gt_masks[i].float() == 1)] = 128
+        # a = batched_inputs[1]['image'].flip(0).permute(1,2,0).cpu().numpy()
+        # b = batched_inputs[1]['instances'].gt_masks[0].unsqueeze(2).cpu().numpy()
+        # c = batched_inputs[1]['groundings']['masks'][0].unsqueeze(2).cpu().numpy()
+        # for i in range(batched_inputs[1]['instances'].gt_masks.shape[0]):
+        #     a[torch.where(batched_inputs[1]['instances'].gt_masks[i].float() == 1)] = 128
         
         if self.training:
             losses = {}
             if self.task_switch['mask']:
-                losses_seg = self.forward_seg_with_cullavo(batched_inputs['coco'], device)
+                losses_seg = self.forward_seg_with_cullavo(batched_inputs, accel)
                 losses.update(losses_seg)
             return losses
         else:
@@ -281,9 +277,9 @@ class CuLLaVO(nn.Module):
                 return self.evaluate_with_llm(batched_inputs)
 
     # CuLLaVO
-    def forward_seg_with_cullavo(self, batched_inputs, device):
+    def forward_seg_with_cullavo(self, batched_inputs, accel):
         # CuLLaVO: llm preparation
-        cullavo_inputs = self.cullavo_model.preprocess(batched_inputs, self.cullavo_processor, device)
+        cullavo_inputs = self.cullavo_model.preprocess(batched_inputs, self.cullavo_processor, accel.device)
         cullavo_outputs = self.cullavo_model(**cullavo_inputs)
         return {'loss_llm': cullavo_outputs.loss}
 

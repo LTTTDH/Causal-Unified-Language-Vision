@@ -28,13 +28,16 @@ class UtilsTrainer(DistributedTrainer):
                 return self.model.get_batch_size(batch)
         return {}
 
+    # Deepspeed & DDP compatible
     def _initialize_accelerator(self):
-        self.accel_config['train_micro_batch_size_per_gpu'] = self.opt['COCO']['TRAIN']['BATCH_SIZE_PER_GPU']        
+        if self.accel.state.deepspeed_plugin is not None:
+            self.accel.state.deepspeed_plugin.deepspeed_config['train_micro_batch_size_per_gpu'] = self.opt['COCO']['TRAIN']['BATCH_SIZE_PER_GPU']
         self.model, self.optimizer, self.lr_scheduler, self.train_dataloaders = \
             self.accel.prepare(self.model, self.optimizer, self.lr_scheduler, self.train_dataloaders)
+        if self.accel.state.deepspeed_plugin is None: self.model = self.model.module
 
     def load_model(self, load_path):
-        self.model = self.model.from_pretrained(load_path)
+        self.model = self.model.from_pretrained(load_path, self.accel)
         self.model.to(self.accel.device)
 
     def save_checkpoint(self, epoch):
@@ -45,17 +48,11 @@ class UtilsTrainer(DistributedTrainer):
             torch.distributed.barrier()
 
         if self.accel.is_main_process:
-            os.makedirs(self.save_folder, exist_ok=True)
-
+            self.model.save_pretrained(save_dir, epoch, self.accel)
+            print(f'Saved!: {save_dir}')
+        
         if torch.distributed.get_world_size() > 1:
             torch.distributed.barrier()
-
-        if self.accel.is_main_process:
-            os.makedirs(save_dir, exist_ok=True)
-
-        if self.accel.is_main_process:
-            self.model.save_pretrained(save_dir, epoch)
-            print(f'Saved!: {save_dir}')
 
     def load_weight(self, checkpoint_path=None, must_exist=False):
         self.load_model(checkpoint_path)

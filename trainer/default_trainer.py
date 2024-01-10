@@ -122,6 +122,14 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
         self.model.to(self.accel.device)
 
         self.train_dataloaders = self.pipeline.get_dataloaders(self, 'train', is_evaluation=False)
+        self.train_loss = LossMeter()
+
+        if self.opt['CUDA']:
+            torch.cuda.empty_cache()
+
+        self.create_optimizer_and_scheduler()
+        self._initialize_accelerator() # accelerator
+        
         self.train_params = {
                              "updates_per_epoch": len(self.train_dataloaders),
                              "total_batch_size": 0,
@@ -133,14 +141,6 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
                              "current_batch_idx": 0,
                              "resume_epoch_idx": 0, 
                              }
-
-        self.train_loss = LossMeter()
-
-        if self.opt['CUDA']:
-            torch.cuda.empty_cache()
-
-        self.create_optimizer_and_scheduler()
-        self._initialize_accelerator() # accelerator
 
         if self.opt.get('WEIGHT', False):
             self.load_weight(self.opt['RESUME_FROM'], must_exist=True)
@@ -192,7 +192,7 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
                 desc += f"Loss[{total_loss:.2f}]|"
                 prog_bar.set_description(desc, refresh=True)
                 
-                # Empty cache
+                # Empty cache and memory efficient allocation
                 torch.cuda.empty_cache()
                 
                 if self.accel.is_main_process and self.opt['WANDB']:
@@ -203,16 +203,15 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
                     wandb.log({'Learning-Rate': self.lr_scheduler.get_last_lr()[0]}) # LBK-LR log
                     wandb.log({'Epoch': epoch+1}) # LBK-LR log
                     
-                                    
                 if batch_idx in [eval_period, eval_period*2, eval_period*3]:
                     self.save_checkpoint(epoch+1)
-                    results = self._eval_on_set()
-                    if self.accel.is_main_process: self.dictionary_display(results)
-                    if self.accel.is_main_process and self.opt['WANDB']: wandb.log(results)
+                    # results = self._eval_on_set()
+                    # if self.accel.is_main_process: self.dictionary_display(results)
+                    # if self.accel.is_main_process and self.opt['WANDB']: wandb.log(results)
                 
             # evaluate and save ckpt every epoch
             if self.accel.is_main_process: print('\n-----------Saving CKPT...-----------\n')
             self.save_checkpoint(epoch+1)
-            results = self._eval_on_set()
-            if self.accel.is_main_process: self.dictionary_display(results)
-            if self.accel.is_main_process and self.opt['WANDB']: wandb.log(results)
+            # results = self._eval_on_set()
+            # if self.accel.is_main_process: self.dictionary_display(results)
+            # if self.accel.is_main_process and self.opt['WANDB']: wandb.log(results)
