@@ -1,6 +1,4 @@
 import torch
-import pathlib
-from transformers import BitsAndBytesConfig
 
 from .utils.utils import LLAVA_LOCAL_PATH
 from .arch_cullavo import CuLLaVOModel

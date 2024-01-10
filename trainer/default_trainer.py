@@ -192,6 +192,9 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
                 desc += f"Loss[{total_loss:.2f}]|"
                 prog_bar.set_description(desc, refresh=True)
                 
+                # Empty cache
+                torch.cuda.empty_cache()
+                
                 if self.accel.is_main_process and self.opt['WANDB']:
                     # log for wandb
                     wb_loss_info = {key: obj.val for key, obj in self.train_loss.losses.items()}

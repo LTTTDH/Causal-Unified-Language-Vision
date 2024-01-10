@@ -228,7 +228,7 @@ class CuLLaVO(nn.Module):
     def device(self):
         return self.pixel_mean.device
 
-    def forward(self, batched_inputs, mode=None):
+    def forward(self, batched_inputs, device, mode=None):
         """
         Args:
             batched_inputs: a list, batched outputs of :class:`DatasetMapper`.
@@ -263,7 +263,7 @@ class CuLLaVO(nn.Module):
         if self.training:
             losses = {}
             if self.task_switch['mask']:
-                losses_seg = self.forward_seg_with_cullavo(batched_inputs['coco'])
+                losses_seg = self.forward_seg_with_cullavo(batched_inputs['coco'], device)
                 losses.update(losses_seg)
             return losses
         else:
@@ -281,9 +281,9 @@ class CuLLaVO(nn.Module):
                 return self.evaluate_with_llm(batched_inputs)
 
     # CuLLaVO
-    def forward_seg_with_cullavo(self, batched_inputs):
+    def forward_seg_with_cullavo(self, batched_inputs, device):
         # CuLLaVO: llm preparation
-        cullavo_inputs = self.cullavo_model.preprocess(batched_inputs, self.cullavo_processor)
+        cullavo_inputs = self.cullavo_model.preprocess(batched_inputs, self.cullavo_processor, device)
         cullavo_outputs = self.cullavo_model(**cullavo_inputs)
         return {'loss_llm': cullavo_outputs.loss}
 
