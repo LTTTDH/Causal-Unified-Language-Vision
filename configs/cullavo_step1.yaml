@@ -14,7 +14,7 @@ DATASETS:
 # CuLLaVO LLM
 LLM:
   LOAD_LLM: true # LLM
-  BITS: 8 # bit quantization
+  BITS: 4 # bit quantization
   GRAD_CUM: 1 # Gradient Accumulation
 
 # Define Test/Trainer/Saving

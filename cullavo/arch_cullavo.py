@@ -81,12 +81,27 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
 
 
     @staticmethod
+    def class2string(classes):
+        out = ''
+        for i, x in enumerate(classes):
+            out+=f"{i+1}.{x}"
+            if i!=len(classes)-1: out+=', '
+        return out
+
+    @staticmethod
+    def box2string(boxes):
+        out = ''
+        for i, x in enumerate(boxes):
+            out+=f"{i+1}.{list(map(lambda x: round(x, 3), x.tolist()))}"
+            if i!=len(boxes)-1: out+=', '
+        return out
+
+    @staticmethod
     def seq2string(seq):
-        out='['
+        out = ''
         for i, x in enumerate(seq):
-            out+=f"{x}"
-            if i!=len(seq)-1: out+=','
-        out+=']'
+            out+=f"{i+1}.{x}"
+            if i!=len(seq)-1: out+=', '
         return out
 
     # @staticmethod
@@ -224,65 +239,42 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         res = [np.round(resize_and_scale(x), 3) for x in res]        
         return res, has_holes
 
-
-    def label_generator(self, input_ids, device):
-        add_point = 24*24-1
-        labels = torch.ones_like(input_ids) * self.config.ignore_index
-        image_labels = torch.ones([input_ids.shape[0], add_point]).to(device) * self.config.ignore_index
-        labels = torch.cat([labels, image_labels], dim=1).to(torch.int64)
-        x_gens, y_gens = torch.where(input_ids == 32002) # <GEN>
-        x_gen_ends, y_gen_ends = torch.where(input_ids == 32003) # </GEN>
-        x_grds, y_grds = torch.where(input_ids == 32004) # <GRD>
-        x_grd_ends, y_grd_ends = torch.where(input_ids == 32005) # </GRD>
-        
-        for x_gen, y_gen, x_gen_end, y_gen_end in zip(x_gens, y_gens, x_gen_ends, y_gen_ends):
-            assert x_gen == x_gen_end
-            labels[x_gen, y_gen+1+add_point: y_gen_end+1+add_point] = input_ids[x_gen, y_gen+1: y_gen_end+1]
-            
-        for x_grd, y_grd, x_grd_end, y_grd_end in zip(x_grds, y_grds, x_grd_ends, y_grd_ends):
-            assert x_grd == x_grd_end
-            labels[x_grd, y_grd+1+add_point: y_grd_end+1+add_point] = input_ids[x_grd, y_grd+1: y_grd_end+1]
-            
-        return labels
-
     def preprocess(
         self,
         inputs,
-        mode=None,
-        *,
         processor,
         device
     ):
-        if mode=='eval':
-            batched_cullavo_prompt=[]
-            for input in inputs:
+        # if mode=='eval':
+        #     batched_cullavo_prompt=[]
+        #     for input in inputs:
 
-                # cullavo prompt prefix
-                cullavo_prompt = "If an image is given, you will predict classes, boxes, and binary masks in order on the image. "
+        #         # cullavo prompt prefix
+        #         cullavo_prompt = "If an image is given, you will predict classes, boxes, and binary masks in order on the image. "
             
-                # cullavo prompt init
-                cullavo_prompt += "USER: <image>\n<GEN>"
+        #         # cullavo prompt init
+        #         cullavo_prompt += "USER: <image>\n<GEN>"
                 
-                # making batched cullavo prompt
-                batched_cullavo_prompt.append(cullavo_prompt)
+        #         # making batched cullavo prompt
+        #         batched_cullavo_prompt.append(cullavo_prompt)
             
-            '''For Final Outputs'''
-            cullavo_inputs = \
-            processor(text=batched_cullavo_prompt, images=torch.stack([input['image'] for input in inputs]), padding=True, return_tensors="pt")
+        #     '''For Final Outputs'''
+        #     cullavo_inputs = \
+        #     processor(text=batched_cullavo_prompt, images=torch.stack([input['image'] for input in inputs]), padding=True, return_tensors="pt")
             
-            # [1] input_ids
-            input_ids = cullavo_inputs.input_ids.to(device)
+        #     # [1] input_ids
+        #     input_ids = cullavo_inputs.input_ids.to(device)
             
-            # [2] pixel values
-            pixel_values = cullavo_inputs.pixel_values.to(device)
+        #     # [2] pixel values
+        #     pixel_values = cullavo_inputs.pixel_values.to(device)
             
-            # [3] attention_mask
-            attention_mask = cullavo_inputs.attention_mask.to(device)
+        #     # [3] attention_mask
+        #     attention_mask = cullavo_inputs.attention_mask.to(device)
 
-            return {"input_ids": input_ids, "pixel_values": pixel_values, "attention_mask": attention_mask,}
+        #     return {"input_ids": input_ids, "pixel_values": pixel_values, "attention_mask": attention_mask,}
                     
         # fix num
-        fix_num = 20
+        fix_num = 10
          
         # initialization
         input_ids = None
@@ -321,56 +313,62 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         #                             labels=[COCO_PANOPTIC_CLASSES[c] for c in inputs[0]['instances'].gt_classes]).get_image()
         
         batched_cullavo_prompt=[]
+        batched_cullavo_label=[]
         for input in inputs:
             # Shape
             _,H,W=input['image'].shape
              
-            if input['groundings']['mode']=='no text':
-             
-                # cullavo prompt prefix
-                cullavo_prompt = "If an image is given, you will predict classes, boxes, and binary masks in order on the image. "
-                # cullavo_prompt += "The output format of classes is string and it is located between <CLASS> and </CLASS>. "
-                # cullavo_prompt += "The output format of boxes is a list and it is located between <BOX> and </BOX>. "
-                # cullavo_prompt += "The output format of instances is a list with tuple and it is located between <INST> and </INST>.\n"
-             
-                # cullavo prompt init
-                cullavo_prompt += "USER:<image>, ASSISTANT:<GEN>"
-                
-                # CLASSES
-                classes = [COCO_PANOPTIC_CLASSES[c].replace('-merged','').replace('-other','').replace('-stuff','') for c in input['instances'].gt_classes]
-                
-                # BOXES
-                input['instances'].gt_boxes.scale(1/W,1/H)
-                boxes = input['instances'].gt_boxes.tensor
-                
-                # MASKS
-                masks = input['instances'].gt_masks
-                small_masks = F.interpolate(masks.float().unsqueeze(1), size=(64, 64), mode='bicubic').squeeze(1).bool()
-                
-                # LBK Visualization
-                # m = masks[0]
-                # sm = small_masks[0]
+            # cullavo prompt prefix
+            cullavo_prompt = "<image> "
+            cullavo_label = torch.tensor([self.config.ignore_index]*(1+576+1)).to(device)
             
-                # Making cullavo prompt
-                for cls, box, small_mask, mask in zip(classes[:fix_num], boxes[:fix_num], small_masks[:fix_num], masks[:fix_num]):
-                    if small_masks.sum()==0: continue
-                    _box = list(map(lambda x: round(x, 3), box.tolist()))
-                    _seq = self.mask2seq(small_mask)
-                    # _mask = self.seq2mask(_seq) # Recover Mask
-                    cullavo_prompt+=f"<CLASS>{cls}</CLASS><BOX>{_box}</BOX><INST>{self.seq2string(_seq)}</INST>"
-                    
-                # cullavo prompt ending
-                cullavo_prompt+="</GEN></s>\n"
+            # CLASSES
+            classes = [COCO_PANOPTIC_CLASSES[c].replace('-merged','').replace('-other','').replace('-stuff','') for c in input['instances'].gt_classes]
+            
+            # BOXES
+            input['instances'].gt_boxes.scale(1/W,1/H)
+            boxes = input['instances'].gt_boxes.tensor
+            
+            # MASKS
+            masks = input['instances'].gt_masks
+            small_masks = F.interpolate(masks.float().unsqueeze(1), size=(64, 64), mode='bicubic').squeeze(1).bool()
+            
+            # LBK Visualization
+            # m = masks[0]
+            # sm = small_masks[0]
+        
+            # Making cullavo prompt
+            new_classes = []
+            new_boxes = []
+            new_seq = []
+            for i, (cls, box, small_mask) in enumerate(zip(classes, boxes, small_masks)):
+                if i>=fix_num: break
+                if small_masks.sum()==0: continue
+                seq = self.mask2seq(small_mask)
+                new_classes.append(cls)
+                new_boxes.append(box)
+                new_seq.append(seq)
+                
+            prompt = f"USER: what objects are in the image? ASSISTANT: {self.class2string(new_classes)}</s>"
+            input_ids = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0]
+            input_ids[:15]=self.config.ignore_index
+            cullavo_label = torch.tensor(cullavo_label.tolist() + input_ids.tolist()).to(device)
+            cullavo_prompt+=prompt
+            
+            prompt = f"USER: what are coordinates of bounding boxes for the objects? ASSISTANT: {self.box2string(new_boxes)}</s>"
+            input_ids = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0]
+            input_ids[:19]=self.config.ignore_index
+            cullavo_label = torch.tensor(cullavo_label.tolist() + input_ids.tolist()).to(device)
+            cullavo_prompt+=prompt
+            
+            prompt = f"USER: what are segmentation masks for the objects? ASSISTANT: {self.seq2string(new_seq)}</s>"
+            input_ids = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0]
+            input_ids[:18]=self.config.ignore_index
+            cullavo_label = torch.tensor(cullavo_label.tolist() + input_ids.tolist()).to(device)
+            cullavo_prompt+=prompt
 
             # Vision Grounding 
-            elif input['groundings']['mode']=='text':
-                
-                # cullavo prompt prefix
-                cullavo_prompt = "If an image and texts are given, "                
-                cullavo_prompt += "you will predict classes, boxes, and binary instance mask corresponding the given text in order on image. "
-                
-                # cullavo prompt init
-                cullavo_prompt += "USER: <image>, "
+            if input['groundings']['mode']=='text':
                 
                 # TEXTS
                 texts = [str(x) for x in input['groundings']['texts']]
@@ -393,15 +391,28 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 # s = small_masks[0]
                 
                 # Making cullavo prompt for vision grounding
-                for cls, box, small_mask, text in zip(classes[:fix_num], boxes[:fix_num], small_masks[:fix_num], texts[:fix_num]):
+                for i, (text, box, small_mask) in enumerate(zip(texts, boxes, small_masks)):
+                    if i>=fix_num: break
                     if small_masks.sum()==0: continue
-                    _box = list(map(lambda x: round(x, 3), box.tolist()))
-                    _seq = self.mask2seq(small_mask)
+                    seq = self.mask2seq(small_mask)
                     # _mask = self.seq2mask(_seq) # Recover Mask
-                    cullavo_prompt+=f"<SET>{text}</SET>, ASSISTANT:<GRD><CLASS>{cls}</CLASS><BOX>{_box}</BOX><INST>{self.seq2string(_seq)}</INST></GRD></s>"
+                    prompt = f"USER: what is coordinate of bounding box for this reference: {text} ASSISTANT: {self.box2string([box])}</s>"
+                    prev_input_ids = processor.tokenizer(f"USER: what is coordinate of bounding box for this reference: {text} ASSISTANT:", return_tensors='pt', add_special_tokens=False).input_ids[0]
+                    input_ids = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0]
+                    input_ids[:prev_input_ids.shape[0]]=self.config.ignore_index
+                    cullavo_label = torch.tensor(cullavo_label.tolist() + input_ids.tolist()).to(device)
+                    cullavo_prompt+=prompt
+                    
+                    prompt = f"USER: what is segmentation mask for this reference: {text} ASSISTANT: {self.seq2string([seq])}</s>"
+                    prev_input_ids = processor.tokenizer(f"USER: what is segmentation mask for this reference: {text} ASSISTANT:", return_tensors='pt', add_special_tokens=False).input_ids[0]
+                    input_ids = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0]
+                    input_ids[:prev_input_ids.shape[0]]=self.config.ignore_index
+                    cullavo_label = torch.tensor(cullavo_label.tolist() + input_ids.tolist()).to(device)
+                    cullavo_prompt+=prompt
             
             # making batched cullavo prompt
             batched_cullavo_prompt.append(cullavo_prompt)
+            batched_cullavo_label.append(cullavo_label)
             
         '''For Final Outputs'''
         cullavo_inputs = \
@@ -417,7 +428,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         attention_mask = cullavo_inputs.attention_mask.to(device)
                 
         # [4] labels
-        labels = self.label_generator(input_ids, device)
+        labels = torch.nn.utils.rnn.pad_sequence(batched_cullavo_label, batch_first=True, padding_value=self.config.ignore_index)
 
         return {"input_ids": input_ids,\
             "pixel_values": pixel_values,\

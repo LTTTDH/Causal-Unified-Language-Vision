@@ -71,17 +71,16 @@ def prepare_cullavo(bits=8):
     cullavo_model = prepare_model_for_kbit_training(cullavo_model, gradient_checkpointing_kwargs={"use_reentrant":True})
     cullavo_model.config.use_cache = False
 
-    # if is_lora:
-    #     from peft import LoraConfig, get_peft_model
-    #     lora_config = LoraConfig(
-    #         r=64,
-    #         lora_alpha=16,
-    #         target_modules=find_all_linear_names(cullavo_model),
-    #         lora_dropout=0.05,
-    #         bias='none',
-    #         task_type="CAUSAL_LM",
-    #     )
-    #     cullavo_model = get_peft_model(cullavo_model, lora_config)
+    from peft import LoraConfig, get_peft_model
+    lora_config = LoraConfig(
+        r=64,
+        lora_alpha=16,
+        target_modules=find_all_linear_names(cullavo_model),
+        lora_dropout=0.05,
+        bias='none',
+        task_type="CAUSAL_LM",
+    )
+    cullavo_model = get_peft_model(cullavo_model, lora_config)
         
     if bits in [4, 8]:
         from peft.tuners.lora import LoraLayer
@@ -93,24 +92,9 @@ def prepare_cullavo(bits=8):
             if 'lm_head' in name or 'embed_tokens' in name:
                 if hasattr(module, 'weight'):
                     module = module.to(torch.bfloat16)
-    cullavo_model.language_model.lm_head.requires_grad_(True)
-    # cullavo_model.multi_modal_projector = cullavo_model_original.multi_modal_projector
-    # cullavo_model.multi_modal_projector.requires_grad_(True)
     
     # Add tokens to tokenzier for CuLLaVO
     cullavo_processor = AutoProcessor.from_pretrained(LLAVA_LOCAL_PATH, padding_side='right')
-    cullavo_processor.tokenizer.add_tokens('<GEN>', special_tokens=True)
-    cullavo_processor.tokenizer.add_tokens('</GEN>', special_tokens=True)
-    cullavo_processor.tokenizer.add_tokens('<GRD>', special_tokens=True)
-    cullavo_processor.tokenizer.add_tokens('</GRD>', special_tokens=True)
-    cullavo_processor.tokenizer.add_tokens('<SET>', special_tokens=True)
-    cullavo_processor.tokenizer.add_tokens('</SET>', special_tokens=True)
-    cullavo_processor.tokenizer.add_tokens('<CLASS>', special_tokens=True)
-    cullavo_processor.tokenizer.add_tokens('</CLASS>', special_tokens=True)
-    cullavo_processor.tokenizer.add_tokens('<BOX>', special_tokens=True)
-    cullavo_processor.tokenizer.add_tokens('</BOX>', special_tokens=True)
-    cullavo_processor.tokenizer.add_tokens('<INST>', special_tokens=True)
-    cullavo_processor.tokenizer.add_tokens('</INST>', special_tokens=True)
     cullavo_processor.tokenizer.add_tokens('<background>', special_tokens=True)
     cullavo_processor.tokenizer.add_tokens('<object>', special_tokens=True)
     
