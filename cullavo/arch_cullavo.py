@@ -237,21 +237,50 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         
         for x_gen, y_gen, x_gen_end, y_gen_end in zip(x_gens, y_gens, x_gen_ends, y_gen_ends):
             assert x_gen == x_gen_end
-            labels[x_gen, y_gen+1+add_point: y_gen_end+add_point] = input_ids[x_gen, y_gen+1: y_gen_end]
+            labels[x_gen, y_gen+1+add_point: y_gen_end+1+add_point] = input_ids[x_gen, y_gen+1: y_gen_end+1]
             
         for x_grd, y_grd, x_grd_end, y_grd_end in zip(x_grds, y_grds, x_grd_ends, y_grd_ends):
             assert x_grd == x_grd_end
-            labels[x_grd, y_grd+1+add_point: y_grd_end+add_point] = input_ids[x_grd, y_grd+1: y_grd_end]
+            labels[x_grd, y_grd+1+add_point: y_grd_end+1+add_point] = input_ids[x_grd, y_grd+1: y_grd_end+1]
             
         return labels
 
     def preprocess(
         self,
         inputs,
+        mode=None,
+        *,
         processor,
         device
     ):
-        
+        if mode=='eval':
+            batched_cullavo_prompt=[]
+            for input in inputs:
+
+                # cullavo prompt prefix
+                cullavo_prompt = "If an image is given, you will predict classes, boxes, and binary masks in order on the image. "
+            
+                # cullavo prompt init
+                cullavo_prompt += "USER: <image>\n<GEN>"
+                
+                # making batched cullavo prompt
+                batched_cullavo_prompt.append(cullavo_prompt)
+            
+            '''For Final Outputs'''
+            cullavo_inputs = \
+            processor(text=batched_cullavo_prompt, images=torch.stack([input['image'] for input in inputs]), padding=True, return_tensors="pt")
+            
+            # [1] input_ids
+            input_ids = cullavo_inputs.input_ids.to(device)
+            
+            # [2] pixel values
+            pixel_values = cullavo_inputs.pixel_values.to(device)
+            
+            # [3] attention_mask
+            attention_mask = cullavo_inputs.attention_mask.to(device)
+
+            return {"input_ids": input_ids, "pixel_values": pixel_values, "attention_mask": attention_mask,}
+                    
         # fix num
         fix_num = 20
          
@@ -305,7 +334,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 # cullavo_prompt += "The output format of instances is a list with tuple and it is located between <INST> and </INST>.\n"
              
                 # cullavo prompt init
-                cullavo_prompt += "USER: <image>\n<GEN>"
+                cullavo_prompt += "USER:<image>, ASSISTANT:<GEN>"
                 
                 # CLASSES
                 classes = [COCO_PANOPTIC_CLASSES[c].replace('-merged','').replace('-other','').replace('-stuff','') for c in input['instances'].gt_classes]
@@ -331,7 +360,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                     cullavo_prompt+=f"<CLASS>{cls}</CLASS><BOX>{_box}</BOX><INST>{self.seq2string(_seq)}</INST>"
                     
                 # cullavo prompt ending
-                cullavo_prompt+="</GEN>\n"
+                cullavo_prompt+="</GEN></s>\n"
 
             # Vision Grounding 
             elif input['groundings']['mode']=='text':
@@ -341,7 +370,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 cullavo_prompt += "you will predict classes, boxes, and binary instance mask corresponding the given text in order on image. "
                 
                 # cullavo prompt init
-                cullavo_prompt += "USER: <image>\n"
+                cullavo_prompt += "USER: <image>, "
                 
                 # TEXTS
                 texts = [str(x) for x in input['groundings']['texts']]
@@ -369,7 +398,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                     _box = list(map(lambda x: round(x, 3), box.tolist()))
                     _seq = self.mask2seq(small_mask)
                     # _mask = self.seq2mask(_seq) # Recover Mask
-                    cullavo_prompt+=f"<SET>{text}</SET><GRD><CLASS>{cls}</CLASS><BOX>{_box}</BOX><INST>{self.seq2string(_seq)}</INST></GRD>\n"
+                    cullavo_prompt+=f"<SET>{text}</SET>, ASSISTANT:<GRD><CLASS>{cls}</CLASS><BOX>{_box}</BOX><INST>{self.seq2string(_seq)}</INST></GRD></s>"
             
             # making batched cullavo prompt
             batched_cullavo_prompt.append(cullavo_prompt)

@@ -33,14 +33,11 @@ class DistributedTrainer:
         if torch.distributed.get_world_size() > 1:
             torch.distributed.barrier()
 
-        if self.accel.is_main_process:
-            os.makedirs(self.save_folder, exist_ok=True)
+        if self.accel.is_main_process: os.makedirs(self.save_folder, exist_ok=True)
 
             # logger.info(f"Save config file to {os.path.join(self.save_folder, 'conf_copy.yaml')}")
             # save_opt_to_yaml(self.opt, os.path.join(self.save_folder, 'conf_copy.yaml'))
 
-        if torch.distributed.get_world_size() > 1:
-            add_hook()
 
         # prepare metadata for save folder
         conf_file = self.opt['conf_files'][0]

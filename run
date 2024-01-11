@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # VLP - Stage1 (Pretrained)
-GPU_DEVICE="0,1,2,3"
+GPU_DEVICE="0"
 length=${#GPU_DEVICE}
 n_gpu=$(((length+1)/2))
 image_bath=4

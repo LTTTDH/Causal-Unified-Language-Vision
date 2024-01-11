@@ -274,7 +274,7 @@ class CuLLaVO(nn.Module):
                 return self.evaluate_grounding_with_llm(batched_inputs)
             else:
                 # return self.evaluate(batched_inputs)
-                return self.evaluate_with_llm(batched_inputs)
+                return self.evaluate_with_llm(batched_inputs, accel)
 
     # CuLLaVO
     def forward_seg_with_cullavo(self, batched_inputs, accel):
@@ -283,94 +283,81 @@ class CuLLaVO(nn.Module):
         cullavo_outputs = self.cullavo_model(**cullavo_inputs)
         return {'loss_llm': cullavo_outputs.loss}
 
-    def evaluate_with_llm(self, batched_inputs):
+    def evaluate_with_llm(self, batched_inputs, accel):
         images = [x["image"].to(self.device) for x in batched_inputs]
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
         
         images = ImageList.from_tensors(images, self.size_divisibility)
 
-        # CuLLaVO: evaluate with LLM
-        features = self.backbone(images.tensor)
-        outputs = self.sem_seg_head(features)
 
-        # CuLLaVO: output splits
-        gen_seg, cls_seg = outputs['pred_outputs_for_cullavo'][:self.num_queries-1], outputs['pred_outputs_for_cullavo'][self.num_queries-1]
-        
-        # CuLLaVO: feature interpolation
-        img_features = F.interpolate(features['res5'], size=(24, 24))
-        
         # CuLLaVO: llm preparation
-        _, gen_tensor = self.llm(img_features=self.mlp_img_feat(img_features.flatten(2,3).permute(0, 2, 1).contiguous()),
-                                img_description=[None for _ in batched_inputs],
-                                ref_description=[None for _ in batched_inputs],
-                                gen_proposals=self.mlp_gen_prop(gen_seg.transpose(0, 1)),
-                                ref_proposals=[None for _ in batched_inputs],
-                                tokenizer=self.llm_tokenizer)
-
-        # CuLLaVO
-        llm_outputs = torch.cat([self.mlp_gen_prop_end(gen_tensor), cls_seg.unsqueeze(1)], dim=1)
-        res_outputs = self.llm_prediction_heads(llm_outputs, outputs['pred_mask_features_for_cullavo'])
+        cullavo_inputs = self.cullavo_model.preprocess(batched_inputs, mode='eval', processor=self.cullavo_processor, device=accel.device)
+        with torch.inference_mode():
+            generate_ids = self.cullavo_model.generate(**{k:v.to(accel.device) for k,v in cullavo_inputs.items()})
+        decoded_text = self.cullavo_processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
+            
+        
 
         #  CuLLaVO 
-        mask_cls_results = res_outputs["pred_logits"] + outputs["pred_logits"]
-        mask_pred_results = res_outputs["pred_masks"] + outputs["pred_masks"]
-        box_pred_results = [None for _ in range(len(mask_pred_results))]
-        caption_pred_results = [None for _ in range(len(mask_pred_results))]
+        # mask_cls_results = res_outputs["pred_logits"]
+        # mask_pred_results = res_outputs["pred_masks"]
+        # box_pred_results = [None for _ in range(len(mask_pred_results))]
+        # caption_pred_results = [None for _ in range(len(mask_pred_results))]
 
-        # upsample masks
-        mask_pred_results = F.interpolate(
-            mask_pred_results,
-            size=(images.tensor.shape[-2], images.tensor.shape[-1]),
-            mode="bicubic",
-            align_corners=False,
-            antialias=True
-        )
+        # # upsample masks
+        # mask_pred_results = F.interpolate(
+        #     mask_pred_results,
+        #     size=(images.tensor.shape[-2], images.tensor.shape[-1]),
+        #     mode="bicubic",
+        #     align_corners=False,
+        #     antialias=True
+        # )
 
-        input_size = mask_pred_results.shape[-2:]
-        keep_sem_bgd = self.metadata.keep_sem_bgd if hasattr(self.metadata, 'keep_sem_bgd') else False
-        del outputs
+        # input_size = mask_pred_results.shape[-2:]
+        # keep_sem_bgd = self.metadata.keep_sem_bgd if hasattr(self.metadata, 'keep_sem_bgd') else False
+        # del outputs
 
-        processed_results = []
-        for mask_cls_result, mask_pred_result, box_pred_result, caption_pred_result, input_per_image, image_size in zip(
-            mask_cls_results, mask_pred_results, box_pred_results, caption_pred_results, batched_inputs, images.image_sizes
-        ):
-            height = input_per_image.get("height", image_size[0])
-            width = input_per_image.get("width", image_size[1])
-            processed_results.append({})
+        # processed_results = []
+        # for mask_cls_result, mask_pred_result, box_pred_result, caption_pred_result, input_per_image, image_size in zip(
+        #     mask_cls_results, mask_pred_results, box_pred_results, caption_pred_results, batched_inputs, images.image_sizes
+        # ):
+        #     height = input_per_image.get("height", image_size[0])
+        #     width = input_per_image.get("width", image_size[1])
+        #     processed_results.append({})
 
-            if self.sem_seg_postprocess_before_inference:
-                mask_pred_result = retry_if_cuda_oom(sem_seg_postprocess)(
-                    mask_pred_result, image_size, height, width
-                )
-                mask_cls_result = mask_cls_result.to(mask_pred_result)
+        #     if self.sem_seg_postprocess_before_inference:
+        #         mask_pred_result = retry_if_cuda_oom(sem_seg_postprocess)(
+        #             mask_pred_result, image_size, height, width
+        #         )
+        #         mask_cls_result = mask_cls_result.to(mask_pred_result)
 
-            # semantic segmentation inference
-            if self.semantic_on:
-                r = retry_if_cuda_oom(self.semantic_inference)(mask_cls_result, mask_pred_result, keep_sem_bgd)
-                if not self.sem_seg_postprocess_before_inference:
-                    r = retry_if_cuda_oom(sem_seg_postprocess)(r, image_size, height, width)
-                processed_results[-1]["sem_seg"] = r
+        #     # semantic segmentation inference
+        #     if self.semantic_on:
+        #         r = retry_if_cuda_oom(self.semantic_inference)(mask_cls_result, mask_pred_result, keep_sem_bgd)
+        #         if not self.sem_seg_postprocess_before_inference:
+        #             r = retry_if_cuda_oom(sem_seg_postprocess)(r, image_size, height, width)
+        #         processed_results[-1]["sem_seg"] = r
 
-            # panoptic segmentation inference
-            if self.panoptic_on:
-                panoptic_r = retry_if_cuda_oom(self.panoptic_inference)(mask_cls_result, mask_pred_result)
-                processed_results[-1]["panoptic_seg"] = panoptic_r
+        #     # panoptic segmentation inference
+        #     if self.panoptic_on:
+        #         panoptic_r = retry_if_cuda_oom(self.panoptic_inference)(mask_cls_result, mask_pred_result)
+        #         processed_results[-1]["panoptic_seg"] = panoptic_r
             
-            # LBK Visualization
-            # cmap = self.create_pascal_label_colormap()
-            # c = cmap[panoptic_r[0].cpu()]
+        #     # LBK Visualization
+        #     # cmap = self.create_pascal_label_colormap()
+        #     # c = cmap[panoptic_r[0].cpu()]
             
-            # instance segmentation inference
-            if self.instance_on:
-                if self.task_switch['bbox']:
-                    box_pred_result = bbox_postprocess(box_pred_result, input_size, image_size, height, width)
-                instance_r = retry_if_cuda_oom(self.instance_inference)(mask_cls_result, mask_pred_result, box_pred_result)
-                processed_results[-1]["instances"] = instance_r
-            if self.task_switch['caption']:
-                processed_results[-1]["captions"] = caption_pred_result
-                processed_results[-1]["masks"] = mask_pred_result
+        #     # instance segmentation inference
+        #     if self.instance_on:
+        #         if self.task_switch['bbox']:
+        #             box_pred_result = bbox_postprocess(box_pred_result, input_size, image_size, height, width)
+        #         instance_r = retry_if_cuda_oom(self.instance_inference)(mask_cls_result, mask_pred_result, box_pred_result)
+        #         processed_results[-1]["instances"] = instance_r
+        #     if self.task_switch['caption']:
+        #         processed_results[-1]["captions"] = caption_pred_result
+        #         processed_results[-1]["masks"] = mask_pred_result
 
-        return processed_results
+        # return processed_results
 
 
     def create_pascal_label_colormap(self):

@@ -28,25 +28,23 @@
             "module": "accelerate.commands.launch",
             "console": "integratedTerminal",
             "justMyCode": false,
-            "env": {"CUDA_VISIBLE_DEVICES": "0,1,2,3"},
+            "env": {"CUDA_VISIBLE_DEVICES": "0,1,2"},
             "args": ["--config_file", "configs/accel/ddp_accel.yaml",
-            "--num_processes", "4",
-            "lbk_entry.py", "train",
+            "--num_processes", "3",
+            "lbk_entry.py", "eval",
             "--conf_files", "configs/cullavo_step1.yaml",
             "--overrides", "WANDB", "False",
             "PIPELINE", "CuLLaVOPipeline", // CuLLaVOPipeline/LLaVAVQAPipeline_TEST
             "COCO.TEST.BATCH_SIZE_TOTAL", "1",
-            "COCO.TRAIN.BATCH_SIZE_TOTAL", "16",
-            "COCO.TRAIN.BATCH_SIZE_PER_GPU", "4",
+            "COCO.TRAIN.BATCH_SIZE_TOTAL", "4",
+            "COCO.TRAIN.BATCH_SIZE_PER_GPU", "1",
             "ADE20K.TEST.BATCH_SIZE_TOTAL", "2", 
             "REF.TEST.BATCH_SIZE_TOTAL", "1", 
             "VQA.TEST.BATCH_SIZE_TOTAL", "1", 
             "WEIGHT", "True", 
             "RESUME_FROM", 
-            "/mnt/ssd/lbk-cvpr/checkpoints/xdecoder_focall_last.pt"]
-            // /mnt/ssd/lbk-cvpr/checkpoints/focalt_in21k_yfcc_gcc_xdecoder_unicl.pt
-            // /mnt/ssd/lbk-cvpr/CuLLaVO/run_final/default/epoch1/CuLLaVO.pt
-            // /mnt/ssd/lbk-cvpr/checkpoints/xdecoder_focall_last.pt
+            // "/mnt/ssd/lbk-cvpr/checkpoints/xdecoder_focall_last.pt"]
+            "/mnt/ssd/lbk-cvpr/CuLLaVO/epoch1/CuLLaVO.pt"]
         }
     ]
 }

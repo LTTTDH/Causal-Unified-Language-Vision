@@ -120,9 +120,6 @@ class CuLLaVOPipeline:
                 model.model.metadata = MetadataCatalog.get(dataset_label)
                 model.model.metadata = hook_metadata(model.model.metadata, dataset_label)
                 eval_type = model.model.metadata.evaluator_type
-                if 'background' in names:
-                    model.model.sem_seg_head.num_classes = len(names) - 1
-                model.model.sem_seg_head.predictor.lang_encoder.get_text_embeddings(names, is_eval=True)
                 hook_switcher(model, dataset_label)
                 total = len(eval_batch_gen)
                 num_warmup = min(5, total - 1)
@@ -143,7 +140,7 @@ class CuLLaVOPipeline:
 
                     start_compute_time = time.perf_counter()
                     batch = move_batch_to_device(batch, trainer.accel.device)
-                    outputs = model(batch, mode=eval_type)
+                    outputs = model(batch, mode=eval_type, accel=trainer.accel)
                     if torch.cuda.is_available():
                         torch.cuda.synchronize()
 
