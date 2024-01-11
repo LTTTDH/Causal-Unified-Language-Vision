@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 
 # VLP - Stage1 (Pretrained)
-GPU_DEVICE="0"
+GPU_DEVICE="0,1,2,3,4,5,6,7"
 length=${#GPU_DEVICE}
 n_gpu=$(((length+1)/2))
 image_bath=4
-test_batch=1
+test_batch=2
 
 CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
             accelerate launch --config_file configs/accel/ddp_accel.yaml \
             --num_processes=$n_gpu \
-            entry.py train \
-            --conf_files configs/cullavo_step1.yaml \
+            lbk_entry.py eval \
+            --conf_files configs/vl_test.yaml \
             --overrides \
-            WANDB True \
+            WANDB False \
+            PIPELINE InstructBLIPImageNetPipeline\
             COCO.TRAIN.BATCH_SIZE_TOTAL $((n_gpu * image_bath)) \
             COCO.TRAIN.BATCH_SIZE_PER_GPU $image_bath \
             COCO.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
@@ -22,6 +23,7 @@ CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
             VLP.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
             REF.TEST.BATCH_SIZE_TOTAL $n_gpu \
             VQA.TEST.BATCH_SIZE_TOTAL $n_gpu \
+            IMAGENET.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch))\
             ADE20K.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
             WEIGHT True \
             RESUME_FROM /mnt/ssd/lbk-cvpr/checkpoints/xdecoder_focall_last.pt

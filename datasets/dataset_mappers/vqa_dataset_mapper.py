@@ -8,20 +8,11 @@ import numpy as np
 
 import torch
 import torch.nn.functional as F
-import transformers
 
 from detectron2.data import detection_utils as utils
 from detectron2.data import transforms as T
 from detectron2.data import MetadataCatalog
-from typing import Dict, Optional, Sequence, List
-
-
-from modeling.language.LangEncoder import build_tokenizer
 from modeling.utils import configurable
-from modeling.language.LangEncoder.constant import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-from modeling.language.LangEncoder import conversation as conversation_lib
-from modeling.language.LangEncoder.mm_utils import tokenizer_image_token
-
 
 __all__ = ["VQADatasetMapper"]
 _root = os.getenv("DATASET2", "datasets") #may need a different root name?
@@ -68,8 +59,6 @@ class VQADatasetMapper:
         *,
         tfm_gens,
         image_format,
-        tokenizer=None,
-        max_token_num=None,
         num_classes=None,
     ):
         """
@@ -93,8 +82,6 @@ class VQADatasetMapper:
 
         self.all_arrows = MetadataCatalog.get(dataset_name).arrows
 
-        self.tokenizer = tokenizer
-        self.max_token_num = max_token_num
         self.num_classes = num_classes
 
     @classmethod
@@ -102,16 +89,11 @@ class VQADatasetMapper:
         # Build augmentation
         tfm_gens = build_transform_gen(cfg, is_train)
 
-        tokenizer = build_tokenizer(cfg['MODEL']['TEXT'])
-        max_token_num = 1024
-
         ret = {
             "is_train": is_train,
             "dataset_name": dataset_name,
             "tfm_gens": tfm_gens,
             "image_format": cfg['INPUT']['FORMAT'],
-            "tokenizer": tokenizer,
-            "max_token_num": max_token_num,
             "num_classes": cfg['VQA']['INPUT']['NUM_CLASSES'],
         }
         return ret

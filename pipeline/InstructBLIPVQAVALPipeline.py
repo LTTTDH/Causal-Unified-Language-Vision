@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 from transformers import InstructBlipProcessor, InstructBlipForConditionalGeneration
 
-class InstructBLIPVQAPipeline:
+class InstructBLIPVQAVALPipeline:
     def __init__(self, opt):
         self._opt = opt
         self.data_classes = COCO_SEMANTIC_CLASSES
@@ -97,9 +97,9 @@ class InstructBLIPVQAPipeline:
         llama2_tokenizer = AutoTokenizer.from_pretrained(LLAMA2_LOCAL_PATH)
         self.eval_freeze(llama2_model)
         
-        # BLIP2 8Bit compression
-        instructblip_model = InstructBlipForConditionalGeneration.from_pretrained(BLIP2_LOCAL_PATH, load_in_8bit=True, torch_dtype=torch.bfloat16)
-        instructblip_processor = InstructBlipProcessor.from_pretrained(BLIP2_LOCAL_PATH)
+        # InstructBLIP 8Bit compression
+        instructblip_model = InstructBlipForConditionalGeneration.from_pretrained(INSTRUCTBLIP_LOCAL_PATH, load_in_8bit=True, torch_dtype=torch.bfloat16)
+        instructblip_processor = InstructBlipProcessor.from_pretrained(INSTRUCTBLIP_LOCAL_PATH)
         self.eval_freeze(instructblip_model)
         
         # CLIP

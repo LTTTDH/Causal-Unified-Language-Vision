@@ -17,5 +17,6 @@ from . import (
     register_pascalvoc_eval,
     register_vqa_datasets,
     register_instp_datasets,
-    register_instruction_datasets
+    register_instruction_datasets,
+    register_imagenet_cls
 )

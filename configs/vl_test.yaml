@@ -2,7 +2,7 @@ NAME: vl_test.yaml
 
 DATASETS:
   TRAIN: ["coco_2017_train_panoptic_filtall_with_sem_seg_caption_grounding"]
-  TEST: ["vqav2_test"]
+  TEST: ["imagenet_val"]
   SIZE_DIVISIBILITY: 32
   PROPOSAL_FILES_TRAIN: []
 
@@ -13,7 +13,7 @@ LLM:
   GRAD_CUM: 1 # Gradient Accumulation
 
 # Define Test/Trainer/Saving
-PIPELINE: LLaVAVQAPipeline_TEST #LLaVAVQAPipeline/LLaVAVQAPipeline_TEST/BakLLaVAVQAPipeline/LLaVAVQAPipeline_TEST/BLIP2VQAPipeline/InstructBLIPVQAPipeline/KOSMOS2VQAPipeline
+PIPELINE: InstructBLIPImageNetPipeline #LLaVAVQAPipeline/LLaVAVQAPipeline_TEST/BakLLaVAVQAPipeline/LLaVAVQAPipeline_TEST/BLIP2VQAPipeline/InstructBLIPVQAPipeline/KOSMOS2VQAPipeline
 TRAINER: xdecoder
 SAVE_DIR: '/mnt/ssd/lbk-cvpr/CuLLaVO'
 base_path: "./"
@@ -215,6 +215,13 @@ INPUT:
   PIXEL_MEAN: [123.675, 116.280, 103.530]
   PIXEL_STD: [58.395, 57.120, 57.375]
 
+
+IMAGENET:
+  TEST:
+    BATCH_SIZE_TOTAL: 1
+  DATALOADER:
+    NUM_WORKERS: 16
+  
 
 # VQAv2 Dataset
 VQA:

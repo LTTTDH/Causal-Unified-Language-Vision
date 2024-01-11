@@ -28,9 +28,10 @@ from cullavo.utils.utils import *
 
 logger = logging.getLogger(__name__)
 
-from transformers import AutoProcessor, Kosmos2ForConditionalGeneration
 
-class KOSMOS2VQAPipeline:
+from transformers import Blip2Processor, Blip2ForConditionalGeneration
+
+class BLIP2VQAVALPipeline:
     def __init__(self, opt):
         self._opt = opt
         self.data_classes = COCO_SEMANTIC_CLASSES
@@ -96,11 +97,10 @@ class KOSMOS2VQAPipeline:
         llama2_tokenizer = AutoTokenizer.from_pretrained(LLAMA2_LOCAL_PATH)
         self.eval_freeze(llama2_model)
         
-        # KOSMOS2
-        kosmos2_model = Kosmos2ForConditionalGeneration.from_pretrained(KOSMOS2_LOCAL_PATH)
-        kosmos2_model = kosmos2_model.to(trainer.accel.device)
-        kosmos2_processor = AutoProcessor.from_pretrained(KOSMOS2_LOCAL_PATH)
-        self.eval_freeze(kosmos2_model)
+        # BLIP2 8Bit compression
+        blip2_model = Blip2ForConditionalGeneration.from_pretrained(BLIP2_LOCAL_PATH, load_in_8bit=True, torch_dtype=torch.bfloat16)
+        blip2_processor = Blip2Processor.from_pretrained(BLIP2_LOCAL_PATH)
+        self.eval_freeze(blip2_model)
         
         # CLIP
         import torch.nn.functional as F
@@ -122,7 +122,7 @@ class KOSMOS2VQAPipeline:
         # CSV
         if trainer.accel.is_main_process:
             import csv
-            with open("problem_experiment/kosmos2_vqa.csv", "w") as f:
+            with open("problem_experiment/blipv2_vqa.csv", "w") as f:
                 csv_writer = csv.writer(f)
                 csv_writer.writerow(['CLASS'] + ['Accuracy'] + ['n_image'])
         
@@ -133,7 +133,7 @@ class KOSMOS2VQAPipeline:
             self.evaluator_total.reset()
             
             # accelerate wrapping
-            llama2_model, clip_model, kosmos2_model, eval_batch_gen = trainer.accel.prepare(llama2_model, clip_model, kosmos2_model, eval_batch_gen)
+            llama2_model, clip_model, blip2_model, eval_batch_gen = trainer.accel.prepare(llama2_model, clip_model, blip2_model, eval_batch_gen)
             
             with torch.no_grad():
                 prog_bar = tqdm(enumerate(eval_batch_gen), total=len(eval_batch_gen), leave=True, disable=not trainer.accel.is_local_main_process)
@@ -142,19 +142,19 @@ class KOSMOS2VQAPipeline:
                     batch = move_batch_to_device(batch, trainer.accel.device)
 
                     # Visualization
-                    # a = batch[0]['image'].permute(1,2,0).cpu().numpy()
+                    # a = batch[0]['image'].flip(0).permute(1,2,0).cpu().numpy()
                     
                     # LLAMA2
                     llama2_prompt = f"Choose object the question asks" +\
                                     "ex) what color is the man's shirt? shirt. " +\
                                     "ex) how many bikes have helmets? helmets. " +\
-                                    f"ex) where are the dogs looking at? dogs. ex) {batch[0]['question']}"
+                                    f"ex) where are the dogs looking at? dogs. ex) {batch[0]['caption']}"
                     llama2_inputs = llama2_tokenizer(llama2_prompt, return_tensors="pt")
 
                     # LLAMA2 In-Context Generation
                     with torch.inference_mode():
                         llama2_generate_ids = llama2_model.generate(llama2_inputs.input_ids.to(trainer.accel.device), max_new_tokens=10, do_sample=True, top_p=0.9, temperature=0.9, pad_token_id=llama2_tokenizer.eos_token_id)
-                    llama2_text = llama2_tokenizer.batch_decode(llama2_generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0][len(llama2_prompt):].strip()
+                    llama2_text = llama2_tokenizer.batch_decode(llama2_generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0][len(llama2_prompt):].strip()                     
 
                     # CLIP Text
                     text_inputs = clip_processor(text=llama2_text.split('.')[0], return_tensors="pt", padding=True)
@@ -167,21 +167,14 @@ class KOSMOS2VQAPipeline:
                     clip_value, clip_index = score.topk(k=1, dim=1)
                     clip_index = clip_index[clip_value.argmax()]
                     
-                    # KOSMOS2 Process
+                    # BLIP2 Process
                     prompt = [f"Question: {batch[0]['question']} Answer:"]
-                    kosmos2_inputs = kosmos2_processor(text=prompt, images=batch[0]['image'], return_tensors="pt")
+                    blip2_inputs = blip2_processor(text=prompt, images=batch[0]['image'], return_tensors="pt")
                     
                     # Generate
                     with torch.inference_mode():
-                        generate_ids = kosmos2_model.generate(pixel_values=kosmos2_inputs["pixel_values"].to(trainer.accel.device),
-                                                            input_ids=kosmos2_inputs["input_ids"].to(trainer.accel.device),
-                                                            attention_mask=kosmos2_inputs["attention_mask"].to(trainer.accel.device),
-                                                            image_embeds=None,
-                                                            image_embeds_position_mask=kosmos2_inputs["image_embeds_position_mask"].to(trainer.accel.device),
-                                                            use_cache=True,
-                                                            max_new_tokens=64)
-                    decoded_text = kosmos2_processor.post_process_generation(
-                        kosmos2_processor.batch_decode(generate_ids, skip_special_tokens=True)[0], cleanup_and_extract=False).split('Answer:')[-1].strip()
+                        generate_ids = blip2_model.generate(**{k:v.to(trainer.accel.device) for k,v in blip2_inputs.items()}, max_new_tokens=10, min_length=1, num_beams=5, length_penalty=-1)
+                    decoded_text = blip2_processor.batch_decode(generate_ids, skip_special_tokens=True)[0].strip()
                     
                     # VQA evaluate process
                     self.evaluator[clip_index[0]].process(batch, {'question_id': batch[0]["question_id"], 'text': decoded_text})
@@ -204,13 +197,13 @@ class KOSMOS2VQAPipeline:
         for i, x in enumerate(self.evaluator):
             if n_image_list[i]==0:
                 if trainer.accel.is_main_process:
-                    with open("problem_experiment/kosmos2_vqa.csv", "a+", newline='') as f:
+                    with open("problem_experiment/blipv2_vqa.csv", "a+", newline='') as f:
                         csv_writer = csv.writer(f)
                         csv_writer.writerow([f'{self.data_classes[i]}'] + ['NaN'] + [n_image_list[i]])
             else:
                 results = x.evaluate()
                 if trainer.accel.is_main_process:
-                    with open("problem_experiment/kosmos2_vqa.csv", "a+", newline='') as f:
+                    with open("problem_experiment/blipv2_vqa.csv", "a+", newline='') as f:
                         csv_writer = csv.writer(f)
                         csv_writer.writerow([f'{self.data_classes[i]}'] + [results['accuracy']] + [n_image_list[i]])
             if self._opt['world_size'] >1: dist.barrier()
@@ -218,7 +211,7 @@ class KOSMOS2VQAPipeline:
         # Total Result Write on CSV
         results = self.evaluator_total.evaluate()
         if trainer.accel.is_main_process:
-            with open("problem_experiment/kosmos2_vqa.csv", "a+", newline='') as f:
+            with open("problem_experiment/blipv2_vqa.csv", "a+", newline='') as f:
                 csv_writer = csv.writer(f)
                 csv_writer.writerow(['ALL'] + [results['accuracy']] + [sum(n_image_list)])
         return scores

@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 from transformers import AutoProcessor, LlavaForConditionalGeneration
 
-class BakLLaVAVQAPipeline:
+class LLaVAVQAVALPipeline:
     def __init__(self, opt):
         self._opt = opt
         self.data_classes = COCO_SEMANTIC_CLASSES
@@ -98,8 +98,8 @@ class BakLLaVAVQAPipeline:
         self.eval_freeze(llama2_model)
         
         # LLaVA 8Bit compression
-        llava_model = LBK.from_pretrained(BAKLLAVA_LOCAL_PATH, load_in_8bit=True, torch_dtype=torch.bfloat16)
-        llava_processor = AutoProcessor.from_pretrained(BAKLLAVA_LOCAL_PATH)
+        llava_model = LBK.from_pretrained(LLAVA_LOCAL_PATH, load_in_8bit=True, torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2")
+        llava_processor = AutoProcessor.from_pretrained(LLAVA_LOCAL_PATH)
         self.eval_freeze(llava_model)
         
         # CLIP
@@ -111,7 +111,7 @@ class BakLLaVAVQAPipeline:
         self.eval_freeze(clip_model)
         
         # CLIP Text
-        text_inputs = clip_processor(text=self.data_classes, return_tensors="pt", padding=True)
+        text_inputs = clip_processor(text=[f'a photo of {cl}' for cl in self.data_classes], return_tensors="pt", padding=True)
         text = clip_model.text_model(**{k:v.to(trainer.accel.device) for k, v in text_inputs.items()})[1]
         text = clip_model.text_projection(text)
         norm_text = F.normalize(text, dim=1)
@@ -122,7 +122,7 @@ class BakLLaVAVQAPipeline:
         # CSV
         if trainer.accel.is_main_process:
             import csv
-            with open("problem_experiment/bakllava_vqa.csv", "w") as f:
+            with open("problem_experiment/llava_vqa.csv", "w") as f:
                 csv_writer = csv.writer(f)
                 csv_writer.writerow(['CLASS'] + ['Accuracy'] + ['n_image'])
         
@@ -131,10 +131,10 @@ class BakLLaVAVQAPipeline:
             eval_batch_gen = self.get_dataloaders(trainer, dataset_label, is_evaluation=True)
             for x in self.evaluator: x.reset()
             self.evaluator_total.reset()
-
+            
             # accelerate wrapping
-            llama2_model, clip_model, llava_model, eval_batch_gen = trainer.accel.prepare(llama2_model, clip_model, llava_model, eval_batch_gen)            
-
+            llama2_model, clip_model, llava_model, eval_batch_gen = trainer.accel.prepare(llama2_model, clip_model, llava_model, eval_batch_gen)
+            
             with torch.no_grad():
                 prog_bar = tqdm(enumerate(eval_batch_gen), total=len(eval_batch_gen), leave=True, disable=not trainer.accel.is_local_main_process)
                 for idx, batch in prog_bar:
@@ -142,22 +142,24 @@ class BakLLaVAVQAPipeline:
                     batch = move_batch_to_device(batch, trainer.accel.device)
 
                     # Visualization
-                    # a = batch[0]['image'].flip(0).permute(1,2,0).cpu().numpy()
+                    # a = batch[0]['image'].permute(1,2,0).cpu().numpy()
                     
                     # LLAMA2
                     llama2_prompt = f"Choose object the question asks" +\
                                     "ex) what color is the man's shirt? shirt. " +\
                                     "ex) how many bikes have helmets? helmets. " +\
+                                    "ex) were there any books on the table? books. " +\
+                                    "ex) what is he on top of? he. " +\
                                     f"ex) where are the dogs looking at? dogs. ex) {batch[0]['question']}"
                     llama2_inputs = llama2_tokenizer(llama2_prompt, return_tensors="pt")
 
                     # LLAMA2 In-Context Generation
                     with torch.inference_mode():
                         llama2_generate_ids = llama2_model.generate(llama2_inputs.input_ids.to(trainer.accel.device), max_new_tokens=10, do_sample=True, top_p=0.9, temperature=0.9, pad_token_id=llama2_tokenizer.eos_token_id)
-                    llama2_text = llama2_tokenizer.batch_decode(llama2_generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0][len(llama2_prompt):].strip()                    
+                    llama2_text = llama2_tokenizer.batch_decode(llama2_generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0][len(llama2_prompt):].strip().split('.')[0]                    
 
                     # CLIP Text
-                    text_inputs = clip_processor(text=llama2_text.split('.')[0], return_tensors="pt", padding=True)
+                    text_inputs = clip_processor(text=f'a photo of {llama2_text}', return_tensors="pt", padding=True)
                     text_embed = clip_model.text_model(**{k:v.to(trainer.accel.device) for k, v in text_inputs.items()})[1]
                     text_embed = clip_model.text_projection(text_embed)
                     norm_text_embed = F.normalize(text_embed, dim=1)
@@ -175,7 +177,7 @@ class BakLLaVAVQAPipeline:
                     
                     # Generate
                     with torch.inference_mode():
-                        generate_ids = llava_model.generate(**{k:v.to(trainer.accel.device) for k,v in llava_inputs.items()}, do_sample=True, temperature=0.2, max_new_tokens=128, use_cache=True)
+                        generate_ids = llava_model.generate(**{k:v.to(trainer.accel.device) for k,v in llava_inputs.items()}, do_sample=False, temperature=0, max_new_tokens=128, use_cache=True)
                     decoded_text = llava_processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].split('ASSISTANT:')[-1].strip()
 
                     # VQA evaluate process
@@ -199,13 +201,13 @@ class BakLLaVAVQAPipeline:
         for i, x in enumerate(self.evaluator):
             if n_image_list[i]==0:
                 if trainer.accel.is_main_process:
-                    with open("problem_experiment/bakllava_vqa.csv", "a+", newline='') as f:
+                    with open("problem_experiment/llava_vqa.csv", "a+", newline='') as f:
                         csv_writer = csv.writer(f)
                         csv_writer.writerow([f'{self.data_classes[i]}'] + ['NaN'] + [n_image_list[i]])
             else:
                 results = x.evaluate()
                 if trainer.accel.is_main_process:
-                    with open("problem_experiment/bakllava_vqa.csv", "a+", newline='') as f:
+                    with open("problem_experiment/llava_vqa.csv", "a+", newline='') as f:
                         csv_writer = csv.writer(f)
                         csv_writer.writerow([f'{self.data_classes[i]}'] + [results['accuracy']] + [n_image_list[i]])
             if self._opt['world_size'] >1: dist.barrier()
@@ -213,7 +215,7 @@ class BakLLaVAVQAPipeline:
         # Total Result Write on CSV
         results = self.evaluator_total.evaluate()
         if trainer.accel.is_main_process:
-            with open("problem_experiment/bakllava_vqa.csv", "a+", newline='') as f:
+            with open("problem_experiment/llava_vqa.csv", "a+", newline='') as f:
                 csv_writer = csv.writer(f)
                 csv_writer.writerow(['ALL'] + [results['accuracy']] + [sum(n_image_list)])
         return scores
