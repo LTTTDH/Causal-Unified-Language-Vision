@@ -274,7 +274,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         #     return {"input_ids": input_ids, "pixel_values": pixel_values, "attention_mask": attention_mask,}
                     
         # fix num
-        fix_num = 10
+        fix_num = 40
          
         # initialization
         input_ids = None
@@ -361,11 +361,11 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             cullavo_label = torch.tensor(cullavo_label.tolist() + input_ids.tolist()).to(device)
             cullavo_prompt+=prompt
             
-            prompt = f"USER: what are segmentation masks for the objects? ASSISTANT: {self.seq2string(new_seq)}</s>"
-            input_ids = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0]
-            input_ids[:18]=self.config.ignore_index
-            cullavo_label = torch.tensor(cullavo_label.tolist() + input_ids.tolist()).to(device)
-            cullavo_prompt+=prompt
+            # prompt = f"USER: what are segmentation masks for the objects? ASSISTANT: {self.seq2string(new_seq)}</s>"
+            # input_ids = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0]
+            # input_ids[:18]=self.config.ignore_index
+            # cullavo_label = torch.tensor(cullavo_label.tolist() + input_ids.tolist()).to(device)
+            # cullavo_prompt+=prompt
 
             # Vision Grounding 
             if input['groundings']['mode']=='text':
@@ -403,12 +403,12 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                     cullavo_label = torch.tensor(cullavo_label.tolist() + input_ids.tolist()).to(device)
                     cullavo_prompt+=prompt
                     
-                    prompt = f"USER: what is segmentation mask for this reference: {text} ASSISTANT: {self.seq2string([seq])}</s>"
-                    prev_input_ids = processor.tokenizer(f"USER: what is segmentation mask for this reference: {text} ASSISTANT:", return_tensors='pt', add_special_tokens=False).input_ids[0]
-                    input_ids = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0]
-                    input_ids[:prev_input_ids.shape[0]]=self.config.ignore_index
-                    cullavo_label = torch.tensor(cullavo_label.tolist() + input_ids.tolist()).to(device)
-                    cullavo_prompt+=prompt
+                    # prompt = f"USER: what is segmentation mask for this reference: {text} ASSISTANT: {self.seq2string([seq])}</s>"
+                    # prev_input_ids = processor.tokenizer(f"USER: what is segmentation mask for this reference: {text} ASSISTANT:", return_tensors='pt', add_special_tokens=False).input_ids[0]
+                    # input_ids = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0]
+                    # input_ids[:prev_input_ids.shape[0]]=self.config.ignore_index
+                    # cullavo_label = torch.tensor(cullavo_label.tolist() + input_ids.tolist()).to(device)
+                    # cullavo_prompt+=prompt
             
             # making batched cullavo prompt
             batched_cullavo_prompt.append(cullavo_prompt)

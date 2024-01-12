@@ -4,8 +4,8 @@
 GPU_DEVICE="0,1,2"
 length=${#GPU_DEVICE}
 n_gpu=$(((length+1)/2))
-image_bath=2
-test_batch=2
+image_bath=1
+test_batch=1
 
 
 # CuLLaVOPipeline
