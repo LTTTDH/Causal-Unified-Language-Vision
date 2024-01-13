@@ -37,18 +37,35 @@ class BaseModel(nn.Module):
             del self.model.cullavo_model
             del self.model.cullavo_processor
             torch.cuda.empty_cache()
-            self.model.cullavo_model = CuLLaVOModel.from_pretrained(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo'), load_in_8bit=True, torch_dtype=torch.bfloat16)
+
+            # TODO: extract bits in peft config
+            bits = 4
+
+            bnb_model_from_pretrained_args = {}
+            from transformers import BitsAndBytesConfig
+            bnb_model_from_pretrained_args.update(dict(
+                load_in_4bit=bits == 4,
+                load_in_8bit=bits == 8,
+                attn_implementation="flash_attention_2",
+                quantization_config=BitsAndBytesConfig(
+                    load_in_4bit=bits == 4,
+                    load_in_8bit=bits == 8,
+                    llm_int8_skip_modules=["vision_tower", "multi_modal_projector", "lm_head"],
+                    llm_int8_threshold=6.0,
+                    llm_int8_has_fp16_weight=False,
+                    bnb_4bit_compute_dtype=torch.bfloat16,
+                    bnb_4bit_use_double_quant=True,
+                    bnb_4bit_quant_type='nf4'
+                )
+            ))
+
+            self.model.cullavo_model = CuLLaVOModel.from_pretrained(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo'), **bnb_model_from_pretrained_args)
             self.model.cullavo_processor = AutoProcessor.from_pretrained(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo'), padding_side="right")
 
-            from peft.tuners.lora import LoraLayer
-            for name, module in self.model.cullavo_model.named_modules():
-                if isinstance(module, LoraLayer):
-                    module = module.to(torch.bfloat16)
-                if 'norm' in name:
-                    module = module.to(torch.float32)
-                if 'lm_head' in name or 'embed_tokens' in name:
-                    if hasattr(module, 'weight'):
-                        module = module.to(torch.bfloat16)
+            for param in self.model.cullavo_model.parameters():
+                if 'float32' in str(param.dtype).lower():
+                    param.data = param.data.to(torch.bfloat16)
+
         else:
             print('There are no CuLLaVO pretrained file: {}'.format(os.path.join("/".join(load_dir.split('/')[:-1]))))
 

@@ -29,7 +29,7 @@ def prepare_cullavo(bits):
             quantization_config=BitsAndBytesConfig(
                 load_in_4bit=bits == 4,
                 load_in_8bit=bits == 8,
-                llm_int8_skip_modules=["vision_tower", "multi_modal_projector"],
+                llm_int8_skip_modules=["vision_tower", "multi_modal_projector", "lm_head"],
                 llm_int8_threshold=6.0,
                 llm_int8_has_fp16_weight=False,
                 bnb_4bit_compute_dtype=torch.bfloat16,
