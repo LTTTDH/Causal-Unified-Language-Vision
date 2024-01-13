@@ -153,7 +153,7 @@ class InstructBLIPVQAVALPipeline:
 
                     # LLAMA2 In-Context Generation
                     with torch.inference_mode():
-                        llama2_generate_ids = llama2_model.generate(llama2_inputs.input_ids.to(trainer.accel.device), max_new_tokens=10, do_sample=True, top_p=0.9, temperature=0.9, pad_token_id=llama2_tokenizer.eos_token_id)
+                        llama2_generate_ids = llama2_model.generate(llama2_inputs.input_ids.to(trainer.accel.device), max_new_tokens=10, do_sample=True, top_p=0.9, temperature=0.9, pad_token_id=llama2_tokenizer.eos_token_id, use_cache=True)
                     llama2_text = llama2_tokenizer.batch_decode(llama2_generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0][len(llama2_prompt):].strip()
                     
                     # CLIP Text
@@ -173,7 +173,7 @@ class InstructBLIPVQAVALPipeline:
                     
                     # Generate
                     with torch.inference_mode():
-                        generate_ids = instructblip_model.generate(**{k:v.to(trainer.accel.device) for k,v in instructblip_inputs.items()}, max_new_tokens=10, min_length=1, num_beams=5, length_penalty=-1)
+                        generate_ids = instructblip_model.generate(**{k:v.to(trainer.accel.device) for k,v in instructblip_inputs.items()}, max_new_tokens=10, min_length=1, num_beams=5, length_penalty=-1, use_cache=True)
                     decoded_text = instructblip_processor.batch_decode(generate_ids, skip_special_tokens=True)[0].strip()
                     
                     # VQA evaluate process

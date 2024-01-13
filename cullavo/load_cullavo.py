@@ -44,10 +44,10 @@ def prepare_cullavo(bits, grad_ckpt, lora):
     cullavo_model = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, **bnb_model_from_pretrained_args)
 
     if bits in [4, 8] and lora:
+        cullavo_model.language_model.config.use_cache = False
         cullavo_model = prepare_model_for_kbit_training(cullavo_model,
                                                         use_gradient_checkpointing=grad_ckpt,
                                                         gradient_checkpointing_kwargs={"use_reentrant": False})
-        cullavo_model.config.use_cache = False
         
         from peft import LoraConfig, get_peft_model
         lora_config = LoraConfig(
