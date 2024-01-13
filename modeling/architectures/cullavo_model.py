@@ -279,7 +279,7 @@ class CuLLaVO(nn.Module):
     # CuLLaVO
     def forward_seg_with_cullavo(self, batched_inputs, accel):
         # CuLLaVO: llm preparation
-        cullavo_inputs = self.cullavo_model.preprocess(batched_inputs, self.cullavo_processor, accel.device)
+        cullavo_inputs = self.cullavo_model.train_process(batched_inputs, self.cullavo_processor, accel.device)
         cullavo_outputs = self.cullavo_model(**cullavo_inputs)
         return {'loss_llm': cullavo_outputs.loss}
 
@@ -291,10 +291,13 @@ class CuLLaVO(nn.Module):
 
 
         # CuLLaVO: llm preparation
-        cullavo_inputs = self.cullavo_model.preprocess(batched_inputs, mode='eval', processor=self.cullavo_processor, device=accel.device)
+        # cullavo_inputs = self.cullavo_model.eval_process(batched_inputs, processor=self.cullavo_processor, device=accel.device)
+        cullavo_inputs = self.cullavo_model.custom_process(batched_inputs, prompt='USER: what are coordinates of bounding boxes for the objects? ASSISTANT:', processor=self.cullavo_processor, device=accel.device)
         with torch.inference_mode():
-            generate_ids = self.cullavo_model.generate(**{k:v.to(accel.device) for k,v in cullavo_inputs.items()})
+            generate_ids = self.cullavo_model.generate(**{k:v.to(accel.device) for k,v in cullavo_inputs.items()}, max_new_tokens=200)
         decoded_text = self.cullavo_processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
+
+        img = batched_inputs[0]['image'].permute(1,2,0).cpu().numpy()
             
         
 

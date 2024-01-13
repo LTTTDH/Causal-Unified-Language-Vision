@@ -13,7 +13,6 @@ def find_all_linear_names(model):
             names = name.split('.')
             lora_module_names.add(names[0] if len(names) == 1 else names[-1])
 
-
     if 'lm_head' in lora_module_names: # needed for 16-bit
         lora_module_names.remove('lm_head')
     return list(lora_module_names)
@@ -67,20 +66,22 @@ def prepare_cullavo(bits=8):
     
     # LLaVA 8Bit compression
     # cullavo_model_original = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, torch_dtype=torch.bfloat16)
-    cullavo_model = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, load_in_8bit=bits==8, load_in_4bit=bits==4, torch_dtype=torch.bfloat16)
-    cullavo_model = prepare_model_for_kbit_training(cullavo_model, gradient_checkpointing_kwargs={"use_reentrant":True})
+    cullavo_model = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, load_in_8bit=bits==8, load_in_4bit=bits==4, torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2")
+    if bits in [4, 8]:
+        cullavo_model = prepare_model_for_kbit_training(cullavo_model, gradient_checkpointing_kwargs={"use_reentrant":True})
     cullavo_model.config.use_cache = False
 
-    from peft import LoraConfig, get_peft_model
-    lora_config = LoraConfig(
-        r=64,
-        lora_alpha=16,
-        target_modules=find_all_linear_names(cullavo_model),
-        lora_dropout=0.05,
-        bias='none',
-        task_type="CAUSAL_LM",
-    )
-    cullavo_model = get_peft_model(cullavo_model, lora_config)
+    if bits in [4, 8]:
+        from peft import LoraConfig, get_peft_model
+        lora_config = LoraConfig(
+            r=64,
+            lora_alpha=16,
+            target_modules=find_all_linear_names(cullavo_model),
+            lora_dropout=0.05,
+            bias='none',
+            task_type="CAUSAL_LM",
+        )
+        cullavo_model = get_peft_model(cullavo_model, lora_config)
         
     if bits in [4, 8]:
         from peft.tuners.lora import LoraLayer

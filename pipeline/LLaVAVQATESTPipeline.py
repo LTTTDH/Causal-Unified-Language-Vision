@@ -118,6 +118,19 @@ class LLaVAVQATESTPipeline:
                         generate_ids = llava_model.generate(**{k:v.to(trainer.accel.device) for k,v in llava_inputs.items()}, do_sample=False, temperature=0, max_new_tokens=128, use_cache=True)
                     decoded_text = llava_processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].split('ASSISTANT:')[-1].strip()
 
+                    # Bounding Box Prompt & Visualization
+                    # prompt = ["A chat between a curious human and an artificial intelligence assistant. "
+                    #           "The assistant gives helpful, detailed, and polite answers to the human's questions. "
+                    #           "<image> USER: what is the coordinate of bounding box for the pitcher in this image ASSISTANT:"]
+                    # llava_inputs = llava_processor(text=prompt, images=batch[0]['image'], return_tensors="pt")
+                    # with torch.inference_mode():
+                    #     generate_ids = llava_model.generate(**{k:v.to(trainer.accel.device) for k,v in llava_inputs.items()}, do_sample=False, temperature=0, max_new_tokens=128, use_cache=True)
+                    # decoded_text = llava_processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].split('ASSISTANT:')[-1].strip()
+                    # from detectron2.utils.visualizer import Visualizer
+                    # import torch.nn.functional as F
+                    # vis = Visualizer(255* ((llava_inputs.pixel_values-llava_inputs.pixel_values.min())/(llava_inputs.pixel_values.max()-llava_inputs.pixel_values.min())).squeeze(0).permute(1,2,0).cpu().numpy())
+                    # out = vis.draw_box(torch.tensor(eval(decoded_text))*336).get_image()
+
                     # VQA evaluate process
                     self.evaluator_total.process(batch, {'question_id': batch[0]["question_id"], 'text': decoded_text})
                     

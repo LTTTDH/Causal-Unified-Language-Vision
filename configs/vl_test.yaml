@@ -2,7 +2,7 @@ NAME: vl_test.yaml
 
 DATASETS:
   TRAIN: ["coco_2017_train_panoptic_filtall_with_sem_seg_caption_grounding"]
-  TEST: ["imagenet_val"]
+  TEST: ["vqav2_test"]
   SIZE_DIVISIBILITY: 32
   PROPOSAL_FILES_TRAIN: []
 
@@ -306,59 +306,6 @@ DATALOADER:
   LOAD_PROPOSALS: False
   SAMPLER_TRAIN: "TrainingSampler"
   ASPECT_RATIO_GROUPING: True
-
-# Detectron2 training config for optimizer and lr scheduler
-# SOLVER:
-#   BASE_LR: 0.00001
-#   STEPS: [0.88889, 0.96296]
-#   MAX_ITER: 1
-#   GAMMA: 0.1
-#   WARMUP_FACTOR: 1.0
-#   WARMUP_ITERS: 10
-#   WARMUP_METHOD: "linear"
-#   WEIGHT_DECAY: 0.05
-#   OPTIMIZER: "ADAMW"
-#   LR_SCHEDULER_NAME: "WarmupMultiStepLR"
-#   LR_MULTIPLIER:
-#     backbone: 1.0
-#     lang_encoder: 1.0
-#   WEIGHT_DECAY_NORM: 0.0
-#   WEIGHT_DECAY_EMBED: 0.0
-#   CLIP_GRADIENTS:
-#     ENABLED: True
-#     CLIP_TYPE: "full_model"
-#     CLIP_VALUE: 5.0 # 0.01
-#     NORM_TYPE: 2.0
-#   AMP:
-#     ENABLED: True
-#   MAX_NUM_EPOCHS: 50
-
-# Detectron2 training config for optimizer and lr scheduler
-SOLVER:
-  BASE_LR: 0.00001
-  BASE_LR_END: 0.0000003
-  STEPS: [0]
-  MAX_ITER: 1
-  WARMUP_FACTOR: 1.0
-  WARMUP_ITERS: 10
-  WARMUP_METHOD: "linear"
-  WEIGHT_DECAY: 0
-  OPTIMIZER: "ADAMW"
-  LR_SCHEDULER_NAME: "WarmupCosineLR"
-  LR_MULTIPLIER:
-    backbone: 1.0
-    lang_encoder: 1.0
-  WEIGHT_DECAY_NORM: 0.0
-  WEIGHT_DECAY_EMBED: 0.0
-  CLIP_GRADIENTS:
-    ENABLED: True
-    CLIP_TYPE: "full_model"
-    CLIP_VALUE: 5.0 # 0.01
-    NORM_TYPE: 2.0
-  AMP:
-    ENABLED: True
-  MAX_NUM_EPOCHS: 1
-
 
 # Evaluation Dataset
 ADE20K:

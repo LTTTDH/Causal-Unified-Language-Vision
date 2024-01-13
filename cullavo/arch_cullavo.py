@@ -81,6 +81,15 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
 
 
     @staticmethod
+    def boxclass2string(boxes, classes):
+        out = '['
+        for i, (b, c) in enumerate(zip(boxes, classes)):
+            out+=f"({list(map(lambda x: round(x, 3), b.tolist()))}, {c})"
+            if i!=len(boxes)-1: out+=', '
+        out += ']'
+        return out
+    
+    @staticmethod
     def class2string(classes):
         out = ''
         for i, x in enumerate(classes):
@@ -239,40 +248,98 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         res = [np.round(resize_and_scale(x), 3) for x in res]        
         return res, has_holes
 
-    def preprocess(
+    @staticmethod
+    def add_and_make_prompt_and_label(cullavo_prompt, cullavo_label, prompt, answer, processor, device, ignore_index):
+        
+        # Only Prompt Length
+        length = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0].shape[0]
+
+        # Concat Prompt + Answer Length + stop token
+        prompt = prompt + " " + answer + "</s>"
+
+        # input_ids and 
+        label_ids = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0]
+        label_ids[:length]=ignore_index
+        
+        # Concat previous prompt + current prompt
+        cullavo_prompt += prompt
+        cullavo_label = torch.tensor(cullavo_label.tolist() + label_ids.tolist()).to(device)
+        
+        return cullavo_prompt, cullavo_label
+
+    @staticmethod
+    def custom_process(
+        inputs,
+        prompt,
+        processor,
+        device):
+        batched_cullavo_prompt=[]
+        for input in inputs:
+
+            # cullavo prompt init
+            cullavo_prompt = "<image> "
+
+            # CLASS
+            cullavo_prompt += prompt
+    
+            # making batched cullavo prompt
+            batched_cullavo_prompt.append(cullavo_prompt)
+        
+        '''For Final Outputs'''
+        cullavo_inputs = \
+        processor(text=batched_cullavo_prompt, images=torch.stack([input['image'] for input in inputs]), padding=True, return_tensors="pt")
+        
+        # [1] input_ids
+        input_ids = cullavo_inputs.input_ids.to(device)
+        
+        # [2] pixel values
+        pixel_values = cullavo_inputs.pixel_values.to(device)
+        
+        # [3] attention_mask
+        attention_mask = cullavo_inputs.attention_mask.to(device)
+
+        return {"input_ids": input_ids, "pixel_values": pixel_values, "attention_mask": attention_mask,}
+
+
+    @staticmethod
+    def eval_process(
+        inputs,
+        processor,
+        device):
+        batched_cullavo_prompt=[]
+        for input in inputs:
+
+            # cullavo prompt init
+            cullavo_prompt = "<image> "
+
+            # CLASS
+            cullavo_prompt += "USER: what objects are in the image? ASSISTANT:"
+    
+            # making batched cullavo prompt
+            batched_cullavo_prompt.append(cullavo_prompt)
+        
+        '''For Final Outputs'''
+        cullavo_inputs = \
+        processor(text=batched_cullavo_prompt, images=torch.stack([input['image'] for input in inputs]), padding=True, return_tensors="pt")
+        
+        # [1] input_ids
+        input_ids = cullavo_inputs.input_ids.to(device)
+        
+        # [2] pixel values
+        pixel_values = cullavo_inputs.pixel_values.to(device)
+        
+        # [3] attention_mask
+        attention_mask = cullavo_inputs.attention_mask.to(device)
+
+        return {"input_ids": input_ids, "pixel_values": pixel_values, "attention_mask": attention_mask,}
+
+
+    def train_process(
         self,
         inputs,
         processor,
         device
-    ):
-        # if mode=='eval':
-        #     batched_cullavo_prompt=[]
-        #     for input in inputs:
-
-        #         # cullavo prompt prefix
-        #         cullavo_prompt = "If an image is given, you will predict classes, boxes, and binary masks in order on the image. "
-            
-        #         # cullavo prompt init
-        #         cullavo_prompt += "USER: <image>\n<GEN>"
-                
-        #         # making batched cullavo prompt
-        #         batched_cullavo_prompt.append(cullavo_prompt)
-            
-        #     '''For Final Outputs'''
-        #     cullavo_inputs = \
-        #     processor(text=batched_cullavo_prompt, images=torch.stack([input['image'] for input in inputs]), padding=True, return_tensors="pt")
-            
-        #     # [1] input_ids
-        #     input_ids = cullavo_inputs.input_ids.to(device)
-            
-        #     # [2] pixel values
-        #     pixel_values = cullavo_inputs.pixel_values.to(device)
-            
-        #     # [3] attention_mask
-        #     attention_mask = cullavo_inputs.attention_mask.to(device)
-
-        #     return {"input_ids": input_ids, "pixel_values": pixel_values, "attention_mask": attention_mask,}
-                    
+    ):                    
         # fix num
         fix_num = 40
          
@@ -307,7 +374,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         # from utils.constants import COCO_PANOPTIC_CLASSES
         # from detectron2.utils.visualizer import Visualizer
         # vis = Visualizer(inputs[0]['image'].permute(1,2,0).cpu().numpy())
-        # out = vis.draw_box(inputs[0]['instances'].gt_boxes.tensor[2]).get_image()
+        # out = vis.draw_box(torch.tensor([0.091, 0.282, 0.48, 0.584])*1024).get_image()
         # out = vis.overlay_instances(boxes=inputs[0]['instances'].gt_boxes.tensor * 1024,
         #                             masks=inputs[0]['instances'].gt_masks,
         #                             labels=[COCO_PANOPTIC_CLASSES[c] for c in inputs[0]['instances'].gt_classes]).get_image()
@@ -349,23 +416,13 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 new_boxes.append(box)
                 new_seq.append(seq)
                 
-            prompt = f"USER: what objects are in the image? ASSISTANT: {self.class2string(new_classes)}</s>"
-            input_ids = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0]
-            input_ids[:15]=self.config.ignore_index
-            cullavo_label = torch.tensor(cullavo_label.tolist() + input_ids.tolist()).to(device)
-            cullavo_prompt+=prompt
-            
-            prompt = f"USER: what are coordinates of bounding boxes for the objects? ASSISTANT: {self.box2string(new_boxes)}</s>"
-            input_ids = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0]
-            input_ids[:19]=self.config.ignore_index
-            cullavo_label = torch.tensor(cullavo_label.tolist() + input_ids.tolist()).to(device)
-            cullavo_prompt+=prompt
-            
-            # prompt = f"USER: what are segmentation masks for the objects? ASSISTANT: {self.seq2string(new_seq)}</s>"
-            # input_ids = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0]
-            # input_ids[:18]=self.config.ignore_index
-            # cullavo_label = torch.tensor(cullavo_label.tolist() + input_ids.tolist()).to(device)
-            # cullavo_prompt+=prompt
+            cullavo_prompt, cullavo_label = self.add_and_make_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                                                                               cullavo_label=cullavo_label, 
+                                                                               prompt="USER: find all bounding box coordinates of all objects in this image and classify their objects with the format of list having tuples of (a object's bounding box coordinate, a object's class) ASSISTANT:", 
+                                                                               answer=self.boxclass2string(new_boxes, new_classes), 
+                                                                               processor=processor,
+                                                                               device=device,
+                                                                               ignore_index=self.config.ignore_index)
 
             # Vision Grounding 
             if input['groundings']['mode']=='text':
@@ -391,24 +448,18 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 # s = small_masks[0]
                 
                 # Making cullavo prompt for vision grounding
-                for i, (text, box, small_mask) in enumerate(zip(texts, boxes, small_masks)):
+                for i, (text, box, cls, small_mask) in enumerate(zip(texts, boxes, classes, small_masks)):
                     if i>=fix_num: break
                     if small_masks.sum()==0: continue
                     seq = self.mask2seq(small_mask)
-                    # _mask = self.seq2mask(_seq) # Recover Mask
-                    prompt = f"USER: what is coordinate of bounding box for this reference: {text} ASSISTANT: {self.box2string([box])}</s>"
-                    prev_input_ids = processor.tokenizer(f"USER: what is coordinate of bounding box for this reference: {text} ASSISTANT:", return_tensors='pt', add_special_tokens=False).input_ids[0]
-                    input_ids = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0]
-                    input_ids[:prev_input_ids.shape[0]]=self.config.ignore_index
-                    cullavo_label = torch.tensor(cullavo_label.tolist() + input_ids.tolist()).to(device)
-                    cullavo_prompt+=prompt
                     
-                    # prompt = f"USER: what is segmentation mask for this reference: {text} ASSISTANT: {self.seq2string([seq])}</s>"
-                    # prev_input_ids = processor.tokenizer(f"USER: what is segmentation mask for this reference: {text} ASSISTANT:", return_tensors='pt', add_special_tokens=False).input_ids[0]
-                    # input_ids = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0]
-                    # input_ids[:prev_input_ids.shape[0]]=self.config.ignore_index
-                    # cullavo_label = torch.tensor(cullavo_label.tolist() + input_ids.tolist()).to(device)
-                    # cullavo_prompt+=prompt
+                    cullavo_prompt, cullavo_label = self.add_and_make_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                                                                                    cullavo_label=cullavo_label, 
+                                                                                    prompt=f"USER: find a bounding box coordinate of this reference: '{text}' in this image and classify its object with the format of (a object's bounding box coordinate, the object's class) ASSISTANT:", 
+                                                                                    answer=self.boxclass2string([box], [cls]), 
+                                                                                    processor=processor,
+                                                                                    device=device, 
+                                                                                    ignore_index=self.config.ignore_index)
             
             # making batched cullavo prompt
             batched_cullavo_prompt.append(cullavo_prompt)

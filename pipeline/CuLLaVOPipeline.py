@@ -113,7 +113,10 @@ class CuLLaVOPipeline:
             
             # accelerate wrapping
             model, eval_batch_gen = trainer.accel.prepare(model, eval_batch_gen)
-            model = model.module # DDP
+            try:
+                model = model.module # DDP
+            except:
+                pass # Deepspeed or Not DDP
             
             with torch.no_grad():
                 names = get_class_names(dataset_label)
