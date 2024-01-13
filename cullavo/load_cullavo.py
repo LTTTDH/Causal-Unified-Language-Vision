@@ -40,7 +40,6 @@ def prepare_cullavo(bits, grad_ckpt, lora):
         ))
 
     # LLaVA 8Bit compression
-    # cullavo_model_original = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, torch_dtype=torch.bfloat16)
     cullavo_model = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, **bnb_model_from_pretrained_args)
 
     if bits in [4, 8] and lora:

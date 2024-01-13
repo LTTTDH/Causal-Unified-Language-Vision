@@ -291,6 +291,7 @@ def build_detection_train_loader(
     assert isinstance(sampler, torch.utils.data.sampler.Sampler)
     return torchdata.DataLoader(
         dataset,
+        shuffle=True,
         batch_size=batch_size,
         # sampler=sampler, # accelerator
         drop_last=False,
