@@ -47,8 +47,8 @@ class UtilsTrainer(DistributedTrainer):
         if torch.distributed.get_world_size() > 1:
             torch.distributed.barrier()
 
+        self.model.save_pretrained(save_dir, epoch, self.accel)
         if self.accel.is_main_process:
-            self.model.save_pretrained(save_dir, epoch, self.accel)
             print(f'Saved!: {save_dir}')
         
         if torch.distributed.get_world_size() > 1:
@@ -57,23 +57,3 @@ class UtilsTrainer(DistributedTrainer):
     def load_weight(self, checkpoint_path=None, must_exist=False):
         self.load_model(checkpoint_path)
         # logger.warning(f'Load weights from {checkpoint_path}...')
-
-    def load_checkpoint(self, checkpoint_path=None, must_exist=False):
-        # logger.warning(f'Resuming checkpoint from {checkpoint_path}...')
-
-        model_load_path = os.path.join(checkpoint_path, 'module_training_states.pt')
-        state = torch.load(model_load_path, map_location=self.accel.device)
-        
-        # logger.warning(f'HACK to strip module from model state dict on single gpu debugging!')
-        ckpt = state['module']
-        if get_world_size() <= 1:
-            ckpt = {key.replace('module.',''):ckpt[key] for key in ckpt.keys()}
-            
-        self.model.load_state_dict(ckpt)
-        self.optimizer.load_state_dict(state['optimizer'])
-        self.lr_scheduler.load_state_dict(state['lr_scheduler'])
-
-        load_path = os.path.join(checkpoint_path, 'trainer_states.pt')
-        trainer_state = torch.load(load_path, map_location='cpu')
-        self.train_loss = trainer_state['train_loss']
-        self.train_params = trainer_state['train_params']

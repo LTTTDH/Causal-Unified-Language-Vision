@@ -144,8 +144,6 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
 
         if self.opt.get('WEIGHT', False):
             self.load_weight(self.opt['RESUME_FROM'], must_exist=True)
-        if self.opt.get('RESUME', False):
-            self.load_checkpoint(self.opt['RESUME_FROM'], must_exist=True)
 
     @staticmethod
     def dictionary_display(results):

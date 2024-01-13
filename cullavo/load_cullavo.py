@@ -17,7 +17,7 @@ def find_all_linear_names(model):
         lora_module_names.remove('lm_head')
     return list(lora_module_names)
 
-def prepare_cullavo(bits):
+def prepare_cullavo(bits, grad_ckpt, lora):
 
     bnb_model_from_pretrained_args = {}
     if bits in [4, 8]:
@@ -25,6 +25,7 @@ def prepare_cullavo(bits):
         bnb_model_from_pretrained_args.update(dict(
             load_in_4bit=bits == 4,
             load_in_8bit=bits == 8,
+            torch_dtype=torch.bfloat16,
             attn_implementation="flash_attention_2",
             quantization_config=BitsAndBytesConfig(
                 load_in_4bit=bits == 4,
@@ -41,11 +42,13 @@ def prepare_cullavo(bits):
     # LLaVA 8Bit compression
     # cullavo_model_original = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, torch_dtype=torch.bfloat16)
     cullavo_model = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, **bnb_model_from_pretrained_args)
-    if bits in [4, 8]:
-        cullavo_model = prepare_model_for_kbit_training(cullavo_model, gradient_checkpointing_kwargs={"use_reentrant":True})
-    cullavo_model.config.use_cache = False
 
-    if bits in [4, 8]:
+    if bits in [4, 8] and lora:
+        cullavo_model = prepare_model_for_kbit_training(cullavo_model,
+                                                        use_gradient_checkpointing=grad_ckpt,
+                                                        gradient_checkpointing_kwargs={"use_reentrant": False})
+        cullavo_model.config.use_cache = False
+        
         from peft import LoraConfig, get_peft_model
         lora_config = LoraConfig(
             r=64,
@@ -56,6 +59,12 @@ def prepare_cullavo(bits):
             task_type="CAUSAL_LM",
         )
         cullavo_model.language_model = get_peft_model(cullavo_model.language_model, lora_config)
+    elif bits in [4, 8] and not lora:
+        raise Exception("training model with non-lora bits quantization is not worked")
+    elif not bits in [4, 8] and lora:
+        raise Exception("CuLLaVO does not have any plan in lora without bit quantization")
+    elif not bits in [4, 8] and lora:
+        raise Exception("CuLLaVO does not have any plan in full training without lora and bit quantization")
 
     # Bfloat16  
     if bits in [4, 8]:

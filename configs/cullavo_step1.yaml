@@ -14,11 +14,13 @@ DATASETS:
 # CuLLaVO LLM
 LLM:
   LOAD_LLM: true # LLM
-  BITS: 4 # bit quantization
+  BITS: 8 # bit quantization
   GRAD_CUM: 1 # Gradient Accumulation
+  GRAD_CKPT: true # Gradient Checkpointing
+  LORA: true # Low Rank Adaptation
   LR: 1e-5 # LR
-  PERIOD: 4 # Save Period
   LAST_LR: 1e-7 # LAST LR
+  PERIOD: 4 # Save Period
   WEIGHT_DECAY: 0 # Weight Decay
   EPOCH: 1 # epoch
 

@@ -20,8 +20,8 @@ def init_wandb(args, job_dir, entity='weip1004', project='cullavo', job_name='tm
     wandb_dir = os.path.join(job_dir, 'wandb')
     os.makedirs(wandb_dir, exist_ok=True)
     runid = None
-    if os.path.exists(f"{wandb_dir}/runid.txt"):
-        runid = open(f"{wandb_dir}/runid.txt").read()
+    # if os.path.exists(f"{wandb_dir}/runid.txt"):
+    #     runid = open(f"{wandb_dir}/runid.txt").read()
 
     wandb.init(project=project,
             name=job_name,

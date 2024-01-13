@@ -20,17 +20,21 @@ class BaseModel(nn.Module):
         return outputs
 
     def save_pretrained(self, save_dir, epoch, accel):
-        model_state_dict = self.model.state_dict()
-        filtered_model_keys = list(filter(lambda x: not x.startswith('cullavo'), model_state_dict))
-        result_dicts = {}
-        for model_key in filtered_model_keys:
-            result_dicts[model_key] = model_state_dict[model_key]
-        os.makedirs(os.path.join(save_dir, f'epoch{epoch}'), exist_ok=True)
-        torch.save(result_dicts, os.path.join(save_dir, f'epoch{epoch}', f"CuLLaVO.pt"))
+        if accel.is_main_process:
+            model_state_dict = self.model.state_dict()
+            filtered_model_keys = list(filter(lambda x: not x.startswith('cullavo'), model_state_dict))
+            result_dicts = {}
+            for model_key in filtered_model_keys:
+                result_dicts[model_key] = model_state_dict[model_key]
+            os.makedirs(os.path.join(save_dir, f'epoch{epoch}'), exist_ok=True)
+            torch.save(result_dicts, os.path.join(save_dir, f'epoch{epoch}', f"CuLLaVO.pt"))
+        if torch.distributed.get_world_size() > 1: torch.distributed.barrier()
         if self.opt['LLM']['LOAD_LLM']:
             llm_path = os.path.join(save_dir, f'epoch{epoch}', "cullavo")
-            accel.unwrap_model(self.model.cullavo_model).save_pretrained(llm_path, is_main_process=accel.is_main_process, save_function=accel.save)
-            accel.unwrap_model(self.model.cullavo_processor).save_pretrained(llm_path, is_main_process=accel.is_main_process, save_function=accel.save)
+            os.environ['TOKENIZERS_PARALLELISM']="false"
+            accel.unwrap_model(self.model.cullavo_model).save_pretrained(llm_path, is_main_process=accel.is_main_process, save_function=accel.save, safe_serialization=False)
+            accel.unwrap_model(self.model.cullavo_processor).save_pretrained(llm_path, is_main_process=accel.is_main_process, save_function=accel.save, safe_serialization=False)
+            os.environ['TOKENIZERS_PARALLELISM']="true"
 
     def from_pretrained(self, load_dir, accel):
         if 'cullavo' in self.opt['RESUME_FROM']:

@@ -145,8 +145,9 @@ class CuLLaVO(nn.Module):
 
         # CuLLaVO
         if cfg['LLM']['LOAD_LLM']:
-            bits = cfg['LLM']['BITS']
-            cullavo_model, cullavo_processor = prepare_cullavo(bits=bits)
+            cullavo_model, cullavo_processor = prepare_cullavo(bits=cfg['LLM']['BITS'],
+                                                               grad_ckpt=cfg['LLM']['GRAD_CKPT'],
+                                                               lora=cfg['LLM']['LORA'])
         else:
             cullavo_model, cullavo_processor = None, None
 
