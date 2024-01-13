@@ -62,7 +62,7 @@ def prepare_model_for_kbit_training(model, use_gradient_checkpointing=True, grad
         model.gradient_checkpointing_enable(**gc_enable_kwargs)
     return model
 
-def prepare_cullavo(bits=8):
+def prepare_cullavo(bits):
     
     # LLaVA 8Bit compression
     # cullavo_model_original = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, torch_dtype=torch.bfloat16)
