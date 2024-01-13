@@ -17,56 +17,30 @@ def find_all_linear_names(model):
         lora_module_names.remove('lm_head')
     return list(lora_module_names)
 
-import inspect
-import warnings
-def prepare_model_for_kbit_training(model, use_gradient_checkpointing=True, gradient_checkpointing_kwargs=None):
-    loaded_in_kbit = getattr(model, "is_loaded_in_8bit", False) or getattr(model, "is_loaded_in_4bit", False)
-    is_gptq_quantized = getattr(model, "quantization_method", None) == "gptq"
-    if gradient_checkpointing_kwargs is None:
-        gradient_checkpointing_kwargs = {}
-
-    for name, param in model.named_parameters():
-        # freeze base model's layers
-        param.requires_grad = False
-
-    if (loaded_in_kbit or is_gptq_quantized) and use_gradient_checkpointing:
-        # When having `use_reentrant=False` + gradient_checkpointing, there is no need for this hack
-        if "use_reentrant" not in gradient_checkpointing_kwargs or gradient_checkpointing_kwargs["use_reentrant"]:
-            # For backward compatibility
-            if hasattr(model, "enable_input_require_grads"):
-                model.enable_input_require_grads()
-            else:
-
-                def make_inputs_require_grad(module, input, output):
-                    output.requires_grad_(True)
-
-                model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
-
-        # To support older transformers versions, check if the model supports gradient_checkpointing_kwargs
-        _supports_gc_kwargs = "gradient_checkpointing_kwargs" in list(
-            inspect.signature(model.gradient_checkpointing_enable).parameters
-        )
-
-        if not _supports_gc_kwargs and len(gradient_checkpointing_kwargs) > 0:
-            warnings.warn(
-                "gradient_checkpointing_kwargs is not supported in this version of transformers. The passed kwargs will be ignored."
-                " if you want to use that feature, please upgrade to the latest version of transformers.",
-                FutureWarning,
-            )
-
-        gc_enable_kwargs = (
-            {} if not _supports_gc_kwargs else {"gradient_checkpointing_kwargs": gradient_checkpointing_kwargs}
-        )
-
-        # enable gradient checkpointing for memory efficiency
-        model.gradient_checkpointing_enable(**gc_enable_kwargs)
-    return model
-
 def prepare_cullavo(bits):
-    
+
+    bnb_model_from_pretrained_args = {}
+    if bits in [4, 8]:
+        from transformers import BitsAndBytesConfig
+        bnb_model_from_pretrained_args.update(dict(
+            load_in_4bit=bits == 4,
+            load_in_8bit=bits == 8,
+            attn_implementation="flash_attention_2",
+            quantization_config=BitsAndBytesConfig(
+                load_in_4bit=bits == 4,
+                load_in_8bit=bits == 8,
+                llm_int8_skip_modules=["vision_tower", "multi_modal_projector"],
+                llm_int8_threshold=6.0,
+                llm_int8_has_fp16_weight=False,
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type='nf4'
+            )
+        ))
+
     # LLaVA 8Bit compression
     # cullavo_model_original = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, torch_dtype=torch.bfloat16)
-    cullavo_model = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, load_in_8bit=bits==8, load_in_4bit=bits==4, torch_dtype=torch.bfloat16)
+    cullavo_model = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, **bnb_model_from_pretrained_args)
     if bits in [4, 8]:
         cullavo_model = prepare_model_for_kbit_training(cullavo_model, gradient_checkpointing_kwargs={"use_reentrant":True})
     cullavo_model.config.use_cache = False
@@ -76,23 +50,23 @@ def prepare_cullavo(bits):
         lora_config = LoraConfig(
             r=64,
             lora_alpha=16,
-            target_modules=find_all_linear_names(cullavo_model),
+            target_modules=find_all_linear_names(cullavo_model.language_model),
             lora_dropout=0.05,
             bias='none',
             task_type="CAUSAL_LM",
         )
-        cullavo_model = get_peft_model(cullavo_model, lora_config)
-        
+        cullavo_model.language_model = get_peft_model(cullavo_model.language_model, lora_config)
+
+    # Bfloat16  
     if bits in [4, 8]:
         from peft.tuners.lora import LoraLayer
-        for name, module in cullavo_model.named_modules():
-            if isinstance(module, LoraLayer):
-                module = module.to(torch.bfloat16)
-            if 'norm' in name:
-                module = module.to(torch.float32)
-            if 'lm_head' in name or 'embed_tokens' in name:
-                if hasattr(module, 'weight'):
-                    module = module.to(torch.bfloat16)
+        for param in cullavo_model.parameters():
+            if 'float32' in str(param.dtype).lower():
+                param.data = param.data.to(torch.bfloat16)
+
+    # Training Linear Connection
+    for param in cullavo_model.multi_modal_projector.parameters():
+        param.requires_grad_(True)
     
     # Add tokens to tokenzier for CuLLaVO
     cullavo_processor = AutoProcessor.from_pretrained(LLAVA_LOCAL_PATH, padding_side='right')
@@ -104,3 +78,4 @@ def prepare_cullavo(bits):
     
     return cullavo_model, cullavo_processor
 
+# for name, param in cullavo_model.named_parameters(): print(f"{name}: {param.dtype} {param.requires_grad}")

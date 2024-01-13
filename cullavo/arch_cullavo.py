@@ -548,7 +548,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
 
                 image_features = self.multi_modal_projector(selected_image_feature)
                 inputs_embeds, attention_mask, position_ids = self._merge_input_ids_with_image_features(
-                    image_features.to(torch.bfloat16), inputs_embeds, input_ids, attention_mask, position_ids
+                    image_features, inputs_embeds, input_ids, attention_mask, position_ids
                 )
                 if labels is None:
                     labels = torch.full_like(attention_mask, self.config.ignore_index).to(torch.long)
