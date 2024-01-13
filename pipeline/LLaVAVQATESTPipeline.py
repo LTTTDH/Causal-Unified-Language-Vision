@@ -121,7 +121,7 @@ class LLaVAVQATESTPipeline:
                     # Bounding Box Prompt & Visualization
                     # prompt = ["A chat between a curious human and an artificial intelligence assistant. "
                     #           "The assistant gives helpful, detailed, and polite answers to the human's questions. "
-                    #           "<image> USER: what is the coordinate of bounding box for the pitcher in this image ASSISTANT:"]
+                    #           "<image> USER: find bounding box coordinates for all objects in this image ASSISTANT:"]
                     # llava_inputs = llava_processor(text=prompt, images=batch[0]['image'], return_tensors="pt")
                     # with torch.inference_mode():
                     #     generate_ids = llava_model.generate(**{k:v.to(trainer.accel.device) for k,v in llava_inputs.items()}, do_sample=False, temperature=0, max_new_tokens=128, use_cache=True)
