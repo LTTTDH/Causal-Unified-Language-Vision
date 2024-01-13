@@ -66,7 +66,7 @@ def prepare_cullavo(bits=8):
     
     # LLaVA 8Bit compression
     # cullavo_model_original = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, torch_dtype=torch.bfloat16)
-    cullavo_model = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, load_in_8bit=bits==8, load_in_4bit=bits==4, torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2")
+    cullavo_model = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, load_in_8bit=bits==8, load_in_4bit=bits==4, torch_dtype=torch.bfloat16)
     if bits in [4, 8]:
         cullavo_model = prepare_model_for_kbit_training(cullavo_model, gradient_checkpointing_kwargs={"use_reentrant":True})
     cullavo_model.config.use_cache = False
