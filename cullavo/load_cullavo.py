@@ -59,7 +59,6 @@ def prepare_cullavo(bits):
 
     # Bfloat16  
     if bits in [4, 8]:
-        from peft.tuners.lora import LoraLayer
         for param in cullavo_model.parameters():
             if 'float32' in str(param.dtype).lower():
                 param.data = param.data.to(torch.bfloat16)
