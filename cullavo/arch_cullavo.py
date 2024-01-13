@@ -374,7 +374,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         # from utils.constants import COCO_PANOPTIC_CLASSES
         # from detectron2.utils.visualizer import Visualizer
         # vis = Visualizer(inputs[0]['image'].permute(1,2,0).cpu().numpy())
-        # out = vis.draw_box(torch.tensor([0.091, 0.282, 0.48, 0.584])*1024).get_image()
+        # out = vis.draw_box(torch.tensor([0.391, 0.478, 0.885, 0.987])*1024).get_image()
         # out = vis.overlay_instances(boxes=inputs[0]['instances'].gt_boxes.tensor * 1024,
         #                             masks=inputs[0]['instances'].gt_masks,
         #                             labels=[COCO_PANOPTIC_CLASSES[c] for c in inputs[0]['instances'].gt_classes]).get_image()
