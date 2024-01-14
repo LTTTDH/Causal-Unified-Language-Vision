@@ -2,7 +2,8 @@ from .transformer_encoder_fpn import *
 try:
     from .transformer_encoder_deform import *
 except:
-    print('Deformable Transformer Encoder is not available.')
+    # print('Deformable Transformer Encoder is not available.')
+    pass
 from .build import *
 
 

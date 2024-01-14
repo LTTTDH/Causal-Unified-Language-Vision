@@ -110,7 +110,7 @@ def register_pretrain(
         )
     else:
         logger = logging.getLogger(__name__)
-        logger.warning("WARNING: Cannot find VLPreDataset. Make sure datasets are accessible if you want to use them for training or evaluation.")        
+        # logger.warning("WARNING: Cannot find VLPreDataset. Make sure datasets are accessible if you want to use them for training or evaluation.")        
 
 def register_all_pretrain(root):
     for (

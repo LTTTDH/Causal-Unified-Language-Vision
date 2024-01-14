@@ -22,5 +22,3 @@ accelerate launch --config_file configs/accel/node_ddp_accel.yaml \
                     VQA.TEST.BATCH_SIZE_TOTAL $n_gpu \
                     # IMAGENET.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch))\
                     ADE20K.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
-                    WEIGHT True \
-                    RESUME_FROM /mnt/ssd/lbk-cvpr/checkpoints/xdecoder_focall_last.pt

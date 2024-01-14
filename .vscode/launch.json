@@ -40,11 +40,11 @@
             "COCO.TRAIN.BATCH_SIZE_PER_GPU", "1",
             "REF.TEST.BATCH_SIZE_TOTAL", "1",
             "VQA.TEST.BATCH_SIZE_TOTAL", "1", 
-            // "IMAGENET.TEST.BATCH_SIZE_TOTAL", "1", 
-            "WEIGHT", "True", 
-            "RESUME_FROM", 
-            "/mnt/ssd/lbk-cvpr/checkpoints/xdecoder_focall_last.pt"]
+            // "IMAGENET.TEST.BATCH_SIZE_TOTAL", "1",
+            // "WEIGHT", "True", 
+            // "RESUME_FROM", 
             // "/mnt/ssd/lbk-cvpr/CuLLaVO/epoch1/CuLLaVO.pt"]
+            ]
         }
     ]
 }
