@@ -62,7 +62,7 @@ def prepare_cullavo(bits, grad_ckpt, lora):
         raise Exception("training model with non-lora bits quantization is not worked")
     elif not bits in [4, 8] and lora:
         raise Exception("CuLLaVO does not have any plan in lora without bit quantization")
-    elif not bits in [4, 8] and lora:
+    elif not bits in [4, 8] and not lora:
         raise Exception("CuLLaVO does not have any plan in full training without lora and bit quantization")
 
     # Bfloat16  
