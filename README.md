@@ -5,3 +5,5 @@
 > CuLLaVO is implemented with multple libraries of **Accelerate (Wrapping DeepSpeed, FSDP, DDP), PEFT, Transformers, BitsandBytes** in Huggingface
 
 > CuLLaVO supports 4bit/8bit Q-LORA training.
+
+> CuLLaVO supports multi-node training with multiple server machines.
