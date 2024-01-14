@@ -293,9 +293,9 @@ class CuLLaVO(nn.Module):
 
         # CuLLaVO: llm preparation
         # cullavo_inputs = self.cullavo_model.eval_process(batched_inputs, processor=self.cullavo_processor, device=accel.device)
-        cullavo_inputs = self.cullavo_model.custom_process(batched_inputs, prompt='USER: what are coordinates of bounding boxes for the objects? ASSISTANT:', processor=self.cullavo_processor, device=accel.device)
+        cullavo_inputs = self.cullavo_model.custom_process(batched_inputs, prompt="USER: find all bounding box coordinates of all objects in this image and classify their objects with the format of list having tuples of (a object's bounding box coordinate, a object's class) ASSISTANT:", processor=self.cullavo_processor, device=accel.device)
         with torch.inference_mode():
-            generate_ids = self.cullavo_model.generate(**{k:v.to(accel.device) for k,v in cullavo_inputs.items()}, max_new_tokens=200, use_cache=True)
+            generate_ids = self.cullavo_model.generate(**{k:v.to(accel.device) for k,v in cullavo_inputs.items()}, do_sample=False, temperature=0, max_new_tokens=2048, use_cache=True)
         decoded_text = self.cullavo_processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
 
         img = batched_inputs[0]['image'].permute(1,2,0).cpu().numpy()
