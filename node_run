@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # VLP - Stage1 (Pretrained)
-n_gpu=1
+n_gpu=11
 image_bath=4
 test_batch=1
 
@@ -20,5 +20,3 @@ accelerate launch --config_file configs/accel/node_ddp_accel.yaml \
                     VLP.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
                     REF.TEST.BATCH_SIZE_TOTAL $n_gpu \
                     VQA.TEST.BATCH_SIZE_TOTAL $n_gpu \
-                    # IMAGENET.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch))\
-                    ADE20K.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
