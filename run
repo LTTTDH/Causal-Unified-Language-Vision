@@ -9,7 +9,7 @@ test_batch=1
 
 # CuLLaVOPipeline
 CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
-            accelerate launch --config_file configs/accel/ddp_accel.yaml \
+            accelerate launch --config_file configs/accel/node_ddp_accel.yaml \
             --num_processes=$n_gpu \
             entry.py train \
             --conf_files configs/cullavo_step1.yaml \
