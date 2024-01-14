@@ -2,8 +2,8 @@ compute_environment: LOCAL_MACHINE
 debug: false
 distributed_type: MULTI_GPU
 downcast_bf16: 'no'
-gpu_ids: 0,1,2,3,4,5,6,7
-machine_rank: 0
+gpu_ids: all
+machine_rank: 1
 main_process_ip: 143.248.49.62
 main_process_port: 11110
 main_training_function: main
@@ -17,11 +17,3 @@ tpu_use_cluster: false
 tpu_use_sudo: false
 use_cpu: false
 
-# 143.248.49.62
-# 53773
-
-# 143.248.49.126
-# 57646
-
-# 143.248.49.128
-# 53277

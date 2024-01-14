@@ -1,12 +1,33 @@
 #!/usr/bin/env bash
 
 # VLP - Stage1 (Pretrained)
-n_gpu=11
+GPU_DEVICE="0,1,2"
+main_ip="143.248.49.62"
+main_port="53773"
+machine_rank=0
+n_mach=3
+length=${#GPU_DEVICE}
+n_gpu=$(((length+1)/2))
+n_proc=$((n_gpu*n_mach))
 image_bath=4
 test_batch=1
 
+# 143.248.49.62
+# 53773
+
+# 143.248.49.126
+# 57646
+
+# 143.248.49.128
+# 53277
+
 # CuLLaVOPipeline
-accelerate launch --config_file configs/accel/node_ddp_accel.yaml \
+CUDA_VISIBLE_DEVICES=$GPU_DEVICE accelerate launch --config_file configs/accel/node_ddp_accel.yaml \
+                    --num_machines=$n_mach \
+                    --num_processes=$n_proc \
+                    --main_process_ip=$main_ip \
+                    --main_process_port=$main_port \
+                    --machine_rank=$machine_rank \
                     entry.py train \
                     --conf_files configs/cullavo_step1.yaml \
                     --overrides \
