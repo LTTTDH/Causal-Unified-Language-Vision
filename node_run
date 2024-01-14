@@ -6,7 +6,7 @@ image_bath=4
 test_batch=1
 
 # CuLLaVOPipeline
-accelerate launch --config_file configs/accel/ddp_accel.yaml \
+accelerate launch --config_file configs/accel/node_ddp_accel.yaml \
                     entry.py train \
                     --conf_files configs/cullavo_step1.yaml \
                     --overrides \
