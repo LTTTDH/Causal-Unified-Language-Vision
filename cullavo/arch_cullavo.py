@@ -126,22 +126,14 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
     #     return out
 
     @staticmethod
-    def seq2mask(seq, height=64, width=64):
-        out = ''
-        for i, x in enumerate(seq):
-            if i==0:
-                if x=='<background>':
-                    j=0
-                elif x=='<object>':
-                    j=1
-                continue
-                    
-            if j%2==0:
-                out += '0'*x
+    def seq2mask(seq, height=24, width=24):
+        out=''
+        for i in range(height*width):
+            if i+1 in seq:
+                out+='1'
             else:
-                out += '1'*x
-            j+=1
-        return torch.tensor(list(map(int, [*out]))).reshape(height, width)
+                out+='0'
+        return torch.tensor(list(map(int, [*out]))).reshape(height, width).bool()
     
     # @staticmethod
     # def seq2mask(seq, height=64, width=64):
@@ -155,57 +147,11 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
     
     @staticmethod
     def mask2seq(small_mask):
-        
-        def bfs_search_and_make_seq(flat_mask):
-            len_flat_mask = len(flat_mask)
-            out = []
-            visit = []
-            for i in range(len_flat_mask):
-                
-                # efficient visit
-                if i in visit: continue
-                
-                # Background
-                if flat_mask[i] == False:
-                    # visit register
-                    visit.append(i)
-                    
-                    # number
-                    num=1
-                    if num+i<len_flat_mask:
-                        while not flat_mask[i+num]:
-                            visit.append(i+num)
-                            num+=1
-                            if num+i>=len_flat_mask:
-                                break
-                    # out.append(('<background>', num))
-                    if i==0:
-                        out.append('<background>')
-                        out.append(num)
-                    else:
-                        out.append(num)
-                # Object
-                else:
-                    # visit register
-                    visit.append(i)
-                    
-                    # number
-                    num=1
-                    if num+i<len_flat_mask:
-                        while flat_mask[i+num]:
-                            visit.append(i+num)
-                            num+=1
-                            if num+i>=len_flat_mask:
-                                break
-                    # out.append(('<object>',num))
-                    if i==0:
-                        out.append('<object>')
-                        out.append(num)
-                    else:
-                        out.append(num)
-            return out
-            
-        return bfs_search_and_make_seq(small_mask.flatten())
+        seq = []
+        for i, m in enumerate(small_mask.flatten()):
+            if m:
+                seq.append(i+1)
+        return torch.tensor(seq)
     
     @staticmethod
     def poly2mask(poly, height=1024, width=1024):
@@ -249,13 +195,26 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         return res, has_holes
 
     @staticmethod
+    def make_system_prompt(processor, device, ignore_index):
+        # system prompt
+        system_prompt = "An image is evenly divided into the 576 number of patches. The image patches is labeled from 1 to 576 in a sequential manner. " + \
+        "Starting from the top-left corner, we assign the image patches to labels row-wise, moving from left to right, and then proceeding to the next row until the entire image is covered. "
+        
+        # concat system prompt and image prompt
+        cullavo_prompt = system_prompt + "<image> "
+        length = processor.tokenizer(cullavo_prompt, return_tensors='pt').input_ids[0].shape[0]
+        cullavo_label = torch.tensor([ignore_index]*(length+575)).to(device)
+
+        return cullavo_prompt, cullavo_label
+
+    @staticmethod
     def add_and_make_prompt_and_label(cullavo_prompt, cullavo_label, prompt, answer, processor, device, ignore_index):
         
         # Only Prompt Length
         length = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0].shape[0]
 
         # Concat Prompt + Answer Length + stop token
-        prompt = prompt + " " + answer + "</s>"
+        prompt = prompt + " " + str(answer) + "</s>"
 
         # input_ids and 
         label_ids = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0]
@@ -341,7 +300,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         device
     ):                    
         # fix num
-        fix_num = 40
+        fix_num = 10
          
         # initialization
         input_ids = None
@@ -386,8 +345,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             _,H,W=input['image'].shape
              
             # cullavo prompt prefix
-            cullavo_prompt = "<image> "
-            cullavo_label = torch.tensor([self.config.ignore_index]*(1+576+1)).to(device)
+            cullavo_prompt, cullavo_label = self.make_system_prompt(processor, device, self.config.ignore_index)
             
             # CLASSES
             classes = [COCO_PANOPTIC_CLASSES[c].replace('-merged','').replace('-other','').replace('-stuff','') for c in input['instances'].gt_classes]
@@ -398,31 +356,53 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             
             # MASKS
             masks = input['instances'].gt_masks
-            small_masks = F.interpolate(masks.float().unsqueeze(1), size=(64, 64), mode='bicubic').squeeze(1).bool()
+            small_masks = F.interpolate(masks.float().unsqueeze(1), size=(24, 24), mode='bicubic').squeeze(1).bool()
             
             # LBK Visualization
-            # m = masks[0]
+            # m = masks[3]
             # sm = small_masks[0]
+            # seq = self.mask2seq(small_masks[0])
+            # a = self.seq2mask(seq)
         
+            # Random shuffling
+            rand_int = torch.randperm(small_masks.shape[0])[:fix_num]
+
             # Making cullavo prompt
-            new_classes = []
-            new_boxes = []
-            new_seq = []
-            for i, (cls, box, small_mask) in enumerate(zip(classes, boxes, small_masks)):
-                if i>=fix_num: break
-                if small_masks.sum()==0: continue
-                seq = self.mask2seq(small_mask)
-                new_classes.append(cls)
-                new_boxes.append(box)
-                new_seq.append(seq)
+            for r_int in rand_int:
+                if small_masks[r_int].sum()==0: continue
+                cls =classes[r_int]
+                box = boxes[r_int]
+                seq = self.mask2seq(small_masks[r_int])
                 
-            cullavo_prompt, cullavo_label = self.add_and_make_prompt_and_label(cullavo_prompt=cullavo_prompt, 
-                                                                               cullavo_label=cullavo_label, 
-                                                                               prompt="USER: find all bounding box coordinates of all objects in this image and classify their objects with the format of list having tuples of (a object's bounding box coordinate, a object's class) ASSISTANT:", 
-                                                                               answer=self.boxclass2string(new_boxes, new_classes), 
-                                                                               processor=processor,
-                                                                               device=device,
-                                                                               ignore_index=self.config.ignore_index)
+
+                # Rolling dice 
+                rolling_dice = torch.randint(high=3, low=0, size=(1,)).item()
+                if rolling_dice==0:
+                    cullavo_prompt, cullavo_label = self.add_and_make_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                                                                                    cullavo_label=cullavo_label, 
+                                                                                    prompt=f"USER: can you find a bounding box coordinate of object for image patch labels {seq.tolist()}?\nAnswer bounding box coordinate only ASSISTANT:",
+                                                                                    answer=box.tolist(),
+                                                                                    processor=processor,
+                                                                                    device=device,
+                                                                                    ignore_index=self.config.ignore_index)
+                elif rolling_dice==1:
+                    cullavo_prompt, cullavo_label = self.add_and_make_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                                                                                    cullavo_label=cullavo_label, 
+                                                                                    prompt=f"USER: do you know the class name of object for image patch labels {seq.tolist()} and bounding box coordinate {box.tolist()}?\nAnswer class name only ASSISTANT:", 
+                                                                                    answer=cls, 
+                                                                                    processor=processor,
+                                                                                    device=device,
+                                                                                    ignore_index=self.config.ignore_index)
+                elif rolling_dice==2:
+                    cullavo_prompt, cullavo_label = self.add_and_make_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                                                                                    cullavo_label=cullavo_label, 
+                                                                                    prompt=f"USER: can you get image patch labels of object for bounding box coordinate {box.tolist()} and class name {cls}?\nAnswer image patch labels only ASSISTANT:", 
+                                                                                    answer=seq.tolist(), 
+                                                                                    processor=processor,
+                                                                                    device=device,
+                                                                                    ignore_index=self.config.ignore_index)
+                else:
+                    raise Exception("This is unexpected error")
 
             # Vision Grounding 
             if input['groundings']['mode']=='text':
@@ -440,26 +420,53 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 
                 # MASKS
                 masks = input['groundings']['masks'].bool()
-                small_masks = F.interpolate(masks.float().unsqueeze(1), size=(64, 64), mode='bicubic').squeeze(1).bool()
+                small_masks = F.interpolate(masks.float().unsqueeze(1), size=(24, 24), mode='bicubic').squeeze(1).bool()
                 
                 # LBK visualization
                 # img = input['image'].permute(1,2,0).cpu().numpy()
                 # m = masks[2]
                 # s = small_masks[0]
                 
-                # Making cullavo prompt for vision grounding
-                for i, (text, box, cls, small_mask) in enumerate(zip(texts, boxes, classes, small_masks)):
-                    if i>=fix_num: break
-                    if small_masks.sum()==0: continue
-                    seq = self.mask2seq(small_mask)
+                # Random shuffling
+                rand_int = torch.randperm(small_masks.shape[0])[:fix_num]
+
+                # Making cullavo prompt
+                for r_int in rand_int:
+                    if small_masks[r_int].sum()==0: continue
+                    cls = classes[r_int]
+                    box = boxes.tensor[r_int]
+                    seq = self.mask2seq(small_masks[r_int])
+                    txt = texts[r_int]
                     
-                    cullavo_prompt, cullavo_label = self.add_and_make_prompt_and_label(cullavo_prompt=cullavo_prompt, 
-                                                                                    cullavo_label=cullavo_label, 
-                                                                                    prompt=f"USER: find a bounding box coordinate of this reference: '{text}' in this image and classify its object with the format of (a object's bounding box coordinate, the object's class) ASSISTANT:", 
-                                                                                    answer=self.boxclass2string([box], [cls]), 
-                                                                                    processor=processor,
-                                                                                    device=device, 
-                                                                                    ignore_index=self.config.ignore_index)
+
+                    # Rolling dice 
+                    rolling_dice = torch.randint(high=3, low=0, size=(1,)).item()
+                    if rolling_dice==0:
+                        cullavo_prompt, cullavo_label = self.add_and_make_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                                                                                        cullavo_label=cullavo_label, 
+                                                                                        prompt=f"USER: can you get image patch labels of object for the given bounding box coordinate {box.tolist()} and text '{txt}'?\nAnswer image patch labels only ASSISTANT:", 
+                                                                                        answer=seq.tolist(), 
+                                                                                        processor=processor,
+                                                                                        device=device, 
+                                                                                        ignore_index=self.config.ignore_index)
+                    elif rolling_dice==1:
+                        cullavo_prompt, cullavo_label = self.add_and_make_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                                                                                        cullavo_label=cullavo_label, 
+                                                                                        prompt=f"USER: can you describe the object for image patch labels {seq.tolist()}?\nAnswer the question in brief ASSISTANT:", 
+                                                                                        answer=txt, 
+                                                                                        processor=processor,
+                                                                                        device=device, 
+                                                                                        ignore_index=self.config.ignore_index)
+                    elif rolling_dice==2:
+                        cullavo_prompt, cullavo_label = self.add_and_make_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                                                                                        cullavo_label=cullavo_label, 
+                                                                                        prompt=f"USER: do you know the class name of object for bounding box coordinate {box.tolist()} and text '{txt}'?\nAnswer class name only ASSISTANT:", 
+                                                                                        answer=cls, 
+                                                                                        processor=processor,
+                                                                                        device=device, 
+                                                                                        ignore_index=self.config.ignore_index)
+                    else:
+                        raise Exception("This is unexpected error")
             
             # making batched cullavo prompt
             batched_cullavo_prompt.append(cullavo_prompt)

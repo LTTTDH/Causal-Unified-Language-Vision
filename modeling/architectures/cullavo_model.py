@@ -291,15 +291,24 @@ class CuLLaVO(nn.Module):
         images = ImageList.from_tensors(images, self.size_divisibility)
 
 
+        a = F.interpolate(torch.stack([x['image'] for x in batched_inputs]), size=(336,336))
+        new_batched_inputs = [{'image': aa} for aa in a]
+        b = a[0].permute(1,2,0).cpu().numpy()
+
         # CuLLaVO: llm preparation
         # cullavo_inputs = self.cullavo_model.eval_process(batched_inputs, processor=self.cullavo_processor, device=accel.device)
-        cullavo_inputs = self.cullavo_model.custom_process(batched_inputs, prompt="USER: find all bounding box coordinates of all objects in this image and classify their objects with the format of list having tuples of (a object's bounding box coordinate, a object's class) ASSISTANT:", processor=self.cullavo_processor, device=accel.device)
+        cullavo_inputs = self.cullavo_model.custom_process(new_batched_inputs, prompt="An image is evenly divided into the 576 number of patches. The patches is labeled from 1 to 576 in a sequential manner. "
+                                                           "Starting from the top-left corner, we assign the patches to labels row-wise, moving from left to right, and then proceeding to the next row until the entire image is covered. "
+                                                           "USER: what is the object name for label sets (5,6,7,8,9,10).\nAnswer the object name only ASSISTANT:", processor=self.cullavo_processor, device=accel.device)
         with torch.inference_mode():
-            generate_ids = self.cullavo_model.generate(**{k:v.to(accel.device) for k,v in cullavo_inputs.items()}, do_sample=False, temperature=0, max_new_tokens=2048, use_cache=True)
-        decoded_text = self.cullavo_processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
+            generate_ids = self.cullavo_model.generate(**{k:v.to(accel.device) for k,v in cullavo_inputs.items()}, do_sample=False, temperature=0, max_new_tokens=200, use_cache=True)
+        decoded_text = self.cullavo_processor.batch_decode(generate_ids)[0]
 
+        # BOX visualizer
+        from detectron2.utils.visualizer import Visualizer
         img = batched_inputs[0]['image'].permute(1,2,0).cpu().numpy()
-            
+        vis = Visualizer(new_batched_inputs[0]['image'].permute(1,2,0).cpu().numpy())
+        out = vis.draw_box(torch.tensor([0.75, 0.55, 0.9, 0.72])*336).get_image()
         
 
         #  CuLLaVO 
