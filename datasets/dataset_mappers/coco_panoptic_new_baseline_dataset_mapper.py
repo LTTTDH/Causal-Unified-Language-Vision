@@ -117,8 +117,8 @@ class COCOPanopticNewBaselineDatasetMapper:
             "is_train": is_train,
             "tfm_gens": tfm_gens,
             "image_format": cfg['INPUT']['FORMAT'],
-            "caption_thres": cfg['MODEL']['DECODER']['CAPTION']['SIM_THRES'],
-            "grounding": cfg['MODEL']['DECODER']['GROUNDING']['ENABLED'],
+            "caption_thres": 0.95,
+            "grounding": True,
         }
         return ret
 
@@ -151,10 +151,10 @@ class COCOPanopticNewBaselineDatasetMapper:
             captions_noun.append(nouns[cap_similarity < self.caption_thres].tolist())
         dataset_dict["captions_noun"] = captions_noun
         
-        if not self.is_train:
-            # USER: Modify this if you want to keep them for some reason.
-            dataset_dict.pop("annotations", None)
-            return dataset_dict
+        # if not self.is_train:
+        #     # USER: Modify this if you want to keep them for some reason.
+        #     dataset_dict.pop("annotations", None)
+        #     return dataset_dict
 
         if "pan_seg_file_name" in dataset_dict:
             pan_seg_gt = utils.read_image(dataset_dict.pop("pan_seg_file_name"), "RGB")

@@ -3,3 +3,5 @@ __pycache__
 problem_experiment
 figures
 run_load_imagenet.bash
+vgg_lpips/*
+vgg_lpips

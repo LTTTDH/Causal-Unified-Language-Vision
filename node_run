@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
 # VLP - Stage1 (Pretrained)
-GPU_DEVICE="0,1,2,3,4,5,6,7"
+GPU_DEVICE="1,2,3,4,5,6,7"
 main_ip="143.248.49.126"
 main_port=11111
-machine_rank=0
+machine_rank=1
 n_mach=2
 length=${#GPU_DEVICE}
 n_gpu=$(((length+1)/2))

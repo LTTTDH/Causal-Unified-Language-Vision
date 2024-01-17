@@ -40,11 +40,13 @@ class BaseModel(nn.Module):
                 multi_modal_projector_state_dict.update({name: param.detach().cpu().clone()})
             if accel.is_main_process: torch.save(multi_modal_projector_state_dict, os.path.join(llm_path, "multi_modal_projector.pt"))
             os.environ['TOKENIZERS_PARALLELISM']='true'
+        if self.opt['VQCLIP']['LOAD_VQCLIP']:
+            if accel.is_main_process: torch.save(self.model.vq_clip.state_dict(), os.path.join(save_dir, f'epoch{epoch}', f"vq_clip.pt"))
 
 
 
     def from_pretrained(self, load_dir, accel):
-        if 'cullavo' in self.opt['RESUME_FROM'].lower():
+        if 'cullavo' in self.opt['RESUME_FROM'].lower() and self.opt['LLM']['LOAD_LLM']:
             
             # Memory Deallocation
             del self.model.cullavo_model
@@ -90,9 +92,15 @@ class BaseModel(nn.Module):
 
             # Freeze Parameter for Evaluating
             for param in self.model.cullavo_model.parameters(): param.requires_grad_(False)
+            if accel.is_main_process: print('CuLLaVO Loaded!!')
+
+        # VQ CLIP
+        elif self.opt['VQCLIP']['LOAD_VQCLIP']:
+            self.model.vq_clip.load_state_dict(torch.load(os.path.join("/".join(load_dir.split('/')[:-1]), f"vq_clip.pt")))
+            if accel.is_main_process: print('VQ-CLIP Loaded!!')
 
         else:
-            print('There are no CuLLaVO pretrained file: {}'.format(os.path.join("/".join(load_dir.split('/')[:-1]))))
+            print('There are no CuLLaVO pretrained and VQ-CLIP file')
 
         state_dict = torch.load(load_dir, map_location=accel.device)
         state_dict = align_and_update_state_dicts(self.model.state_dict(), state_dict)

@@ -33,18 +33,17 @@
             "args": ["--config_file", "configs/accel/ddp_accel.yaml",
             "--num_processes", "1",
             "lbk_entry.py", "train",
-            "--conf_files", "configs/cullavo_step1.yaml",
+            "--conf_files", "configs/cullavo_step0.yaml",
             "--overrides", "WANDB", "False",
             "PIPELINE", "CuLLaVOPipeline", // CuLLaVOPipeline/LLaVAVQATESTPipeline/BLIP2ImageNetPipeline/InstructBLIPImageNetPipeline
             "COCO.TEST.BATCH_SIZE_TOTAL", "1",
-            "COCO.TRAIN.BATCH_SIZE_TOTAL", "1",
-            "COCO.TRAIN.BATCH_SIZE_PER_GPU", "1",
+            "COCO.TRAIN.BATCH_SIZE_TOTAL", "2",
+            "COCO.TRAIN.BATCH_SIZE_PER_GPU", "2",
             "REF.TEST.BATCH_SIZE_TOTAL", "1",
             "VQA.TEST.BATCH_SIZE_TOTAL", "1", 
-            // "IMAGENET.TEST.BATCH_SIZE_TOTAL", "1",
             // "WEIGHT", "True", 
             // "RESUME_FROM", 
-            // "/mnt/ssd/lbk-cvpr/CuLLaVO/epoch1/CuLLaVO.pt"]
+            // "/mnt/hard/lbk-cvpr/CuLLaVO/epoch1/CuLLaVO.pt"]
             ]
         }
     ]

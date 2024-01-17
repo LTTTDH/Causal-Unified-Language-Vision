@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 
-# VLP - Stage1 (Pretrained)
-GPU_DEVICE="0,1,2"
+# Stage0 (VQ-CLIP)
+GPU_DEVICE="0,1,2,3,4,5,6,7"
 length=${#GPU_DEVICE}
 n_gpu=$(((length+1)/2))
-image_bath=4
+image_bath=10
 test_batch=1
 
 # CuLLaVOPipeline
 CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
-            accelerate launch --config_file configs/accel/node_ddp_accel.yaml \
+            accelerate launch --config_file configs/accel/ddp_accel.yaml \
             --num_processes=$n_gpu \
             entry.py train \
-            --conf_files configs/cullavo_step1.yaml \
+            --conf_files configs/cullavo_step0.yaml \
             --overrides \
-            WANDB True \
+            WANDB False \
             PIPELINE CuLLaVOPipeline\
             COCO.TRAIN.BATCH_SIZE_TOTAL $((n_gpu * image_bath)) \
             COCO.TRAIN.BATCH_SIZE_PER_GPU $image_bath \
@@ -28,3 +28,33 @@ CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
             ADE20K.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
             WEIGHT True \
             RESUME_FROM /mnt/ssd/lbk-cvpr/checkpoints/xdecoder_focall_last.pt
+
+
+# Stage1 (CuLLaVO)
+# GPU_DEVICE="0,1,2,3,4,5,6,7"
+# length=${#GPU_DEVICE}
+# n_gpu=$(((length+1)/2))
+# image_bath=16
+# test_batch=1
+
+# # CuLLaVOPipeline
+# CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
+#             accelerate launch --config_file configs/accel/node_ddp_accel.yaml \
+#             --num_processes=$n_gpu \
+#             entry.py train \
+#             --conf_files configs/cullavo_step1.yaml \
+#             --overrides \
+#             WANDB True \
+#             PIPELINE CuLLaVOPipeline\
+#             COCO.TRAIN.BATCH_SIZE_TOTAL $((n_gpu * image_bath)) \
+#             COCO.TRAIN.BATCH_SIZE_PER_GPU $image_bath \
+#             COCO.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
+#             VLP.TRAIN.BATCH_SIZE_TOTAL $((n_gpu * image_bath)) \
+#             VLP.TRAIN.BATCH_SIZE_PER_GPU $image_bath \
+#             VLP.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
+#             REF.TEST.BATCH_SIZE_TOTAL $n_gpu \
+#             VQA.TEST.BATCH_SIZE_TOTAL $n_gpu \
+#             # IMAGENET.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch))\
+#             ADE20K.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
+#             WEIGHT True \
+#             RESUME_FROM /mnt/ssd/lbk-cvpr/checkpoints/xdecoder_focall_last.pt

@@ -12,12 +12,12 @@ DATASETS:
   PROPOSAL_FILES_TRAIN: []
 
 # OPTIMIZER
-OPTMIZER:
-  LR: 1e-5 # LR
-  LAST_LR: 1e-7 # LAST LR
-  PERIOD: 4 # Save Period
+OPTIMIZER:
+  LR: 1e-4 # LR
+  LAST_LR: 1e-5 # LAST LR
+  PERIOD: 2 # Save Period
   WEIGHT_DECAY: 0 # Weight Decay
-  EPOCH: 1 # epoch
+  EPOCH: 10 # epoch
 
 # VQ-CLIP
 VQCLIP:
@@ -25,7 +25,7 @@ VQCLIP:
 
 # CuLLaVO LLM
 LLM:
-  LOAD_LLM: true # LLM
+  LOAD_LLM: false # LLM
   BITS: 4 # bit quantization
   GRAD_CUM: 1 # Gradient Accumulation
   GRAD_CKPT: true # Gradient Checkpointing

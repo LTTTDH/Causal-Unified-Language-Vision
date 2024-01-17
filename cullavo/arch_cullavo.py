@@ -8,7 +8,6 @@ from utils.constants import COCO_PANOPTIC_CLASSES
 
 import cv2
 import numpy as np
-from skimage import measure
 import pycocotools.mask as mask_util
 import torch.nn.functional as F
 
@@ -93,7 +92,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
     def class2string(classes):
         out = ''
         for i, x in enumerate(classes):
-            out+=f"{i+1}.{x}"
+            out+=f"{x}"
             if i!=len(classes)-1: out+=', '
         return out
 
@@ -101,29 +100,18 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
     def box2string(boxes):
         out = ''
         for i, x in enumerate(boxes):
-            out+=f"{i+1}.{list(map(lambda x: round(x, 3), x.tolist()))}"
+            out+=f"{i+1}.{list(map(lambda x: round(x, 4), x.tolist()))}"
             if i!=len(boxes)-1: out+=', '
         return out
 
     @staticmethod
     def seq2string(seq):
-        out = ''
+        out = '['
         for i, x in enumerate(seq):
-            out+=f"{i+1}.{x}"
+            out+=f"{x}"
             if i!=len(seq)-1: out+=', '
+        out+=']'
         return out
-
-    # @staticmethod
-    # def seq2string(seq):
-    #     out='['
-    #     for i, (x, y) in enumerate(seq):
-    #         if x=='<background>':
-    #             out+=f"(<background>,{y})"
-    #         else:
-    #             out+=f"(<object>,{y})"
-    #         if i!=len(seq)-1: out+=','
-    #     out+=']'
-    #     return out
 
     @staticmethod
     def seq2mask(seq, height=24, width=24):
@@ -134,16 +122,6 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             else:
                 out+='0'
         return torch.tensor(list(map(int, [*out]))).reshape(height, width).bool()
-    
-    # @staticmethod
-    # def seq2mask(seq, height=64, width=64):
-    #     out = ''
-    #     for x, y in seq:
-    #         if x=='<background>':
-    #             out += '0'*y
-    #         else:
-    #             out += '1'*y
-    #     return torch.tensor(list(map(int, [*out]))).reshape(height, width)
     
     @staticmethod
     def mask2seq(small_mask):
@@ -197,19 +175,22 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
     @staticmethod
     def make_system_prompt(processor, device, ignore_index):
         # system prompt
-        system_prompt = "An image is evenly divided into the 576 number of patches. The image patches is labeled from 1 to 576 in a sequential manner. " + \
+        system_prompt = "An image is evenly divided into the 576 number of patches. The image patches are labeled from 1 to 576 in a sequential manner. " + \
         "Starting from the top-left corner, we assign the image patches to labels row-wise, moving from left to right, and then proceeding to the next row until the entire image is covered. "
         
         # concat system prompt and image prompt
-        cullavo_prompt = system_prompt + "<image> "
+        cullavo_prompt = system_prompt + "<image>"
         length = processor.tokenizer(cullavo_prompt, return_tensors='pt').input_ids[0].shape[0]
         cullavo_label = torch.tensor([ignore_index]*(length+575)).to(device)
 
         return cullavo_prompt, cullavo_label
 
     @staticmethod
-    def add_and_make_prompt_and_label(cullavo_prompt, cullavo_label, prompt, answer, processor, device, ignore_index):
+    def make_and_add_prompt_and_label(cullavo_prompt, cullavo_label, prompt, answer, processor, device, ignore_index):
         
+        # indent
+        prompt = " " + prompt
+
         # Only Prompt Length
         length = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0].shape[0]
 
@@ -300,7 +281,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         device
     ):                    
         # fix num
-        fix_num = 10
+        fix_num = 5
          
         # initialization
         input_ids = None
@@ -378,15 +359,15 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 # Rolling dice 
                 rolling_dice = torch.randint(high=3, low=0, size=(1,)).item()
                 if rolling_dice==0:
-                    cullavo_prompt, cullavo_label = self.add_and_make_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                    cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
                                                                                     prompt=f"USER: can you find a bounding box coordinate of object for image patch labels {seq.tolist()}?\nAnswer bounding box coordinate only ASSISTANT:",
-                                                                                    answer=box.tolist(),
+                                                                                    answer=self.box2string(box),
                                                                                     processor=processor,
                                                                                     device=device,
                                                                                     ignore_index=self.config.ignore_index)
                 elif rolling_dice==1:
-                    cullavo_prompt, cullavo_label = self.add_and_make_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                    cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
                                                                                     prompt=f"USER: do you know the class name of object for image patch labels {seq.tolist()} and bounding box coordinate {box.tolist()}?\nAnswer class name only ASSISTANT:", 
                                                                                     answer=cls, 
@@ -394,10 +375,10 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                                     device=device,
                                                                                     ignore_index=self.config.ignore_index)
                 elif rolling_dice==2:
-                    cullavo_prompt, cullavo_label = self.add_and_make_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                    cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
                                                                                     prompt=f"USER: can you get image patch labels of object for bounding box coordinate {box.tolist()} and class name {cls}?\nAnswer image patch labels only ASSISTANT:", 
-                                                                                    answer=seq.tolist(), 
+                                                                                    answer=self.seq2string(seq), 
                                                                                     processor=processor,
                                                                                     device=device,
                                                                                     ignore_index=self.config.ignore_index)
@@ -442,7 +423,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                     # Rolling dice 
                     rolling_dice = torch.randint(high=3, low=0, size=(1,)).item()
                     if rolling_dice==0:
-                        cullavo_prompt, cullavo_label = self.add_and_make_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                        cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                         cullavo_label=cullavo_label, 
                                                                                         prompt=f"USER: can you get image patch labels of object for the given bounding box coordinate {box.tolist()} and text '{txt}'?\nAnswer image patch labels only ASSISTANT:", 
                                                                                         answer=seq.tolist(), 
@@ -450,7 +431,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                                         device=device, 
                                                                                         ignore_index=self.config.ignore_index)
                     elif rolling_dice==1:
-                        cullavo_prompt, cullavo_label = self.add_and_make_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                        cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                         cullavo_label=cullavo_label, 
                                                                                         prompt=f"USER: can you describe the object for image patch labels {seq.tolist()}?\nAnswer the question in brief ASSISTANT:", 
                                                                                         answer=txt, 
@@ -458,7 +439,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                                         device=device, 
                                                                                         ignore_index=self.config.ignore_index)
                     elif rolling_dice==2:
-                        cullavo_prompt, cullavo_label = self.add_and_make_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                        cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                         cullavo_label=cullavo_label, 
                                                                                         prompt=f"USER: do you know the class name of object for bounding box coordinate {box.tolist()} and text '{txt}'?\nAnswer class name only ASSISTANT:", 
                                                                                         answer=cls, 

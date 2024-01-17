@@ -165,7 +165,7 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
         Training
         """
         self.init_train()
-        num_epochs = self.opt['LLM']['EPOCH']
+        num_epochs = self.opt['OPTIMIZER']['EPOCH']
 
         if self.opt.get('EVAL_AT_START', False):
             results = self._eval_on_set()
@@ -177,7 +177,7 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
             self.train_params['current_epoch_idx'] = epoch
             logger.info(f"Start epoch: {epoch} training.")
             
-            eval_period = self.train_params['updates_per_epoch'] // self.opt['LLM']['PERIOD']
+            eval_period = self.train_params['updates_per_epoch'] // self.opt['OPTIMIZER']['PERIOD']
             prog_bar = tqdm(enumerate(self.train_dataloaders), total=self.train_params['updates_per_epoch'], leave=True, disable=not self.accel.is_local_main_process)
             for batch_idx, batch in prog_bar:
                 self.train_params['current_batch_idx'] = batch_idx
@@ -201,7 +201,7 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
                     wandb.log({'Learning-Rate': self.lr_scheduler.get_last_lr()[0]}) # LBK-LR log
                     wandb.log({'Epoch': epoch+1}) # LBK-LR log
                     
-                if batch_idx in [eval_period * (k+1) for k in range(self.opt['LLM']['PERIOD']-1)]:
+                if batch_idx in [eval_period * (k+1) for k in range(self.opt['OPTIMIZER']['PERIOD']-1)]:
                     self.save_checkpoint(epoch+1)
                     # results = self._eval_on_set()
                     # if self.accel.is_main_process: self.dictionary_display(results)
