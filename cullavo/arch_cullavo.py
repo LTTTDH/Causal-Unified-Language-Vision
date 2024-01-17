@@ -175,8 +175,8 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
     @staticmethod
     def make_system_prompt(processor, device, ignore_index):
         # system prompt
-        system_prompt = "An image is evenly divided into the 576 number of patches. The image patches are labeled from 1 to 576 in a sequential manner. " + \
-        "Starting from the top-left corner, we assign the image patches to labels row-wise, moving from left to right, and then proceeding to the next row until the entire image is covered. "
+        system_prompt = "A chat between a curious human and an artificial intelligence assistant. "+\
+                        "The assistant gives helpful, detailed, and polite answers to the human's questions. "
         
         # concat system prompt and image prompt
         cullavo_prompt = system_prompt + "<image>"
@@ -351,7 +351,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             # Making cullavo prompt
             for r_int in rand_int:
                 if small_masks[r_int].sum()==0: continue
-                cls =classes[r_int]
+                cls = classes[r_int]
                 box = boxes[r_int]
                 seq = self.mask2seq(small_masks[r_int])
                 

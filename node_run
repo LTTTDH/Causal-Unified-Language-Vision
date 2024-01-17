@@ -9,7 +9,7 @@ n_mach=2
 length=${#GPU_DEVICE}
 n_gpu=$(((length+1)/2))
 n_proc=$((n_gpu*n_mach))
-image_bath=2
+image_bath=1
 test_batch=1
 
 # 143.248.49.62

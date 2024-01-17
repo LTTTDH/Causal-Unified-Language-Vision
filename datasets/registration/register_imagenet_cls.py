@@ -60,5 +60,5 @@ def register_all_imagenet(root):
         MetadataCatalog.get(name).evaluator_type = "classification"
 
 
-_root = os.getenv("DATASET", "datasets")    # returns the value of the environment key if exists otherwise returns the default value(second argument) 
-register_all_imagenet(_root)                # _root = "/mnt/hard2/lbk-cvpr/dataset"
+_root = os.getenv("DATASET", "datasets")
+register_all_imagenet(_root)
