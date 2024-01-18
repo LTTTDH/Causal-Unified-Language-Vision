@@ -1,8 +1,8 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # Modified by Bowen Cheng from https://github.com/facebookresearch/detr/blob/master/d2/detr/dataset_mapper.py
 import copy
-import logging
 import random
+from PIL import Image
 
 import numpy as np
 import torch
@@ -54,7 +54,7 @@ def build_transform_gen(cfg, is_train):
     # ])
     
     augmentation.extend([
-        T.Resize((image_size, image_size)),
+        T.Resize((image_size, image_size),  Image.BICUBIC),
     ])
     
     return augmentation

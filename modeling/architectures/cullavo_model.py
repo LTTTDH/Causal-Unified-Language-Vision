@@ -1,27 +1,10 @@
-# --------------------------------------------------------
-# X-Decoder -- Generalized Decoding for Pixel, Image, and Language
-# Copyright (c) 2022 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
-# Written by Xueyan Zou (xueyan@cs.wisc.edu), Ziyi Dou, Jianwei Yang
-# --------------------------------------------------------
-
-from typing import Tuple
-import random
-
 import torch
 from torch import nn
 from torch.nn import functional as F
-import numpy as np
-
-from timm.models.layers import trunc_normal_
-from detectron2.structures import Boxes, ImageList, Instances, BitMasks, BoxMode
-from detectron2.utils.memory import retry_if_cuda_oom
-from detectron2.data import MetadataCatalog
+from detectron2.structures import ImageList
 
 from .build import register_model
-from ..utils import configurable, get_class_names
-from ..modules import sem_seg_postprocess, bbox_postprocess
-from ..language.loss import vl_similarity
+from ..utils import configurable
 
 # CuLLaVO
 from cullavo.load_cullavo import prepare_cullavo
@@ -99,31 +82,7 @@ class CuLLaVO(nn.Module):
 
     # CuLLaVO
     def forward_vqclip(self, batched_inputs, accel):
-        max_num_instances = 10
-
-        masks_list = []
-        masked_image_list = []
-        for batch in batched_inputs:
-            masks = batch['instances'].gt_masks
-            masked_images = masks.unsqueeze(1).repeat(1, 3, 1, 1) * batch['image']
-            masked_image_list.append(masked_images)
-            masks_list.append(masks)
-        masked_image_tensor = torch.cat(masked_image_list, dim=0)
-        mask_tensor = torch.cat(masks_list, dim=0)
-
-        id = torch.randperm(len(masked_image_tensor))[:max_num_instances]
-        shuffled_masked_image_tensor = masked_image_tensor[id]
-        shuffled_mask_tensor = mask_tensor[id]
-
-        # Visualization
-        # a = masked_image[0].permute(1,2,0).cpu().numpy()
-        # b = batch['image'].permute(1,2,0).cpu().numpy()
-        # c = masks[6].cpu().numpy()
-        # d = images[1].permute(1,2,0).cpu().numpy()
-        # e = self.vq_clip(images, accel)[0][0].permute(1,2,0).detach().float().cpu().numpy()
-        # n = lambda x: (x-x.min()) / (x.max()-x.min())
-        # f = n(d)
-        return {'loss_clip': self.vq_clip(shuffled_masked_image_tensor, shuffled_mask_tensor, accel)[2]}
+        return {'loss_clip': self.vq_clip(batched_inputs, accel)[2]}
 
     # CuLLaVO
     def forward_seg_with_cullavo(self, batched_inputs, accel):

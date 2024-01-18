@@ -11,7 +11,6 @@ import torch.nn as nn
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from typing import Tuple, Dict, List, Union
-from infinibatch import iterators
 
 from trainer.default_trainer import DefaultTrainer
 
@@ -37,7 +36,7 @@ class LLaVAImageNetPipeline:
         self, trainer: DefaultTrainer,
         dataset_label: str,
         is_evaluation: bool
-    ) -> Union[DataLoader, iterators.CheckpointableIterator]:
+    ):
         if is_evaluation:
             if not hasattr(self, 'valid_loader'):
                 dataloaders = build_eval_dataloader(self._opt)

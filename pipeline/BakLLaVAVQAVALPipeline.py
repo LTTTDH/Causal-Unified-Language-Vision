@@ -14,7 +14,6 @@ import torch.nn as nn
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from typing import Tuple, Dict, List, Union
-from infinibatch import iterators
 
 from trainer.default_trainer import DefaultTrainer
 
@@ -40,7 +39,7 @@ class BakLLaVAVQAVALPipeline:
         self, trainer: DefaultTrainer,
         dataset_label: str,
         is_evaluation: bool
-    ) -> Union[DataLoader, iterators.CheckpointableIterator]:
+    ):
         distributed = self._opt['world_size'] > 1
         if is_evaluation:
             if not hasattr(self, 'valid_loader'):

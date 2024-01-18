@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
 # Stage0 (VQ-CLIP)
-GPU_DEVICE="1,2,3,4,5,6,7"
+GPU_DEVICE="0,1,2,3,4,5,6,7"
 length=${#GPU_DEVICE}
 n_gpu=$(((length+1)/2))
-image_bath=10
+image_bath=20
 test_batch=1
 
 # CuLLaVOPipeline
@@ -25,7 +25,6 @@ CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
             VLP.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
             REF.TEST.BATCH_SIZE_TOTAL $n_gpu \
             VQA.TEST.BATCH_SIZE_TOTAL $n_gpu \
-            ADE20K.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch))
 
 
 # Stage1 (CuLLaVO)

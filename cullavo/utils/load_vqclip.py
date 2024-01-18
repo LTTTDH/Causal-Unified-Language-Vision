@@ -2,7 +2,6 @@ import os
 import math
 import torch
 import numpy as np
-from .LFQ import LFQ
 from .utils import *
 import torch.nn as nn
 from .VQ import VectorQuantize
@@ -46,6 +45,14 @@ class ResidualBlock(nn.Module):
         else:
             return x + self.block(x)
 
+class CLIPUpSampleBlock(nn.Module):
+    def __init__(self, channels):
+        super(CLIPUpSampleBlock, self).__init__()
+        self.conv = nn.Conv2d(channels, channels, 3, 1, 1)
+
+    def forward(self, x):
+        x = F.interpolate(x, scale_factor=7.0)
+        return self.conv(x)
 
 class UpSampleBlock(nn.Module):
     def __init__(self, channels):
@@ -105,7 +112,7 @@ class NonLocalBlock(nn.Module):
 class Decoder(nn.Module):
     def __init__(self):
         super(Decoder, self).__init__()
-        channels = [512, 512, 256, 256, 128, 128]
+        channels = [512, 256, 256, 128]
         attn_resolutions = [16]
         num_res_blocks = 3
         resolution = 16
@@ -126,10 +133,13 @@ class Decoder(nn.Module):
             if i != 0:
                 layers.append(UpSampleBlock(in_channels))
                 resolution *= 2
+            else:
+                layers.append(CLIPUpSampleBlock(in_channels))
+                resolution *= 7
 
         layers.append(GroupNorm(in_channels))
         layers.append(Swish())
-        layers.append(nn.Conv2d(in_channels, 1, 3, 1, 1))
+        layers.append(nn.Conv2d(in_channels, 3, 3, 1, 1))
         self.model = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -143,12 +153,16 @@ class VQCLIP(nn.Module):
 
         # ENCODER
         self.clip_encoder = CLIPModel.from_pretrained(CLIPLARGE_LOCAL_PATH)
+        for param in self.clip_encoder.parameters(): param.requires_grad_(False);
+        self.clip_encoder = self.clip_encoder.eval()
         self.clip_processor = CLIPProcessor.from_pretrained(CLIPLARGE_LOCAL_PATH)
+        self.image_mean = torch.tensor(self.clip_processor.image_processor.image_mean).view(1,-1,1,1)
+        self.image_std = torch.tensor(self.clip_processor.image_processor.image_std).view(1,-1,1,1)
         
         # Bottleneck
-        self.bottleneck = nn.Sequential(nn.Conv2d(1024, 1024, kernel_size=4, stride=2, padding=1),
+        self.bottleneck = nn.Sequential(nn.Conv2d(1024, 1024, kernel_size=2, stride=2, padding=0),
                                         nn.GELU(),
-                                        nn.Conv2d(1024, 1024, kernel_size=4, stride=2, padding=1),
+                                        nn.Conv2d(1024, 1024, kernel_size=2, stride=2, padding=0),
                                         nn.GELU())
                                         
 
@@ -157,16 +171,9 @@ class VQCLIP(nn.Module):
         self.post_quant_conv = torch.nn.Conv2d(1024, 1024, 1)
 
         # [VQ] Method
-
-        # LFQ
-        # self.LFQ = LFQ(
-        #             codebook_size = 65536,      
-        #             dim = 1024,
-        #             entropy_loss_weight = 1,
-        #             diversity_gamma = 1.)    
-        
+                
         # Normal VQ
-        self.LFQ = VectorQuantize(
+        self.VQ = VectorQuantize(
                     dim = 1024,
                     codebook_size = 1024,
                     decay = 0.8,             
@@ -183,18 +190,43 @@ class VQCLIP(nn.Module):
     def to_feat(x):
         return x.view(x.shape[0], x.shape[1], -1).permute(0, 2, 1)
 
-    def forward(self, x, m, accel):
-        m_resize = F.interpolate(m.unsqueeze(1).float(), size=(192,192), mode='bicubic').squeeze(1).bool().float()
-        clip_inputs = self.clip_processor(images=x, return_tensors='pt')
+    def forward(self, batched_inputs, accel):
+
+        max_num_instances = 20
+
+        masks_list = []
+        masked_image_list = []
+        for batch in batched_inputs:
+            masks = batch['instances'].gt_masks
+            masked_images = masks.unsqueeze(1).repeat(1, 3, 1, 1) * batch['image']
+            masked_images = masks.unsqueeze(1).repeat(1, 3, 1, 1).bool().float() * 255
+            masked_image_list.append(masked_images)
+            masks_list.append(masks.bool().float())
+        masked_image_tensor = torch.cat(masked_image_list, dim=0)
+        mask_tensor = torch.cat(masks_list, dim=0)
+
+        id = torch.randperm(len(masked_image_tensor))[:max_num_instances]
+        shuffled_masked_image_tensor = masked_image_tensor[id]
+        shuffled_mask_tensor = mask_tensor[id]
+
+        clip_inputs = self.clip_processor(images=shuffled_masked_image_tensor, return_tensors='pt')
         clip_embeds = self.clip_encoder.vision_model(pixel_values=clip_inputs.pixel_values.to(accel.device), output_hidden_states=True).hidden_states[-2][:,1:]
         bottleneck_embeds = self.bottleneck(self.pre_quant_conv(self.to_image(clip_embeds)))
-        quantized, indices, commit_loss = self.LFQ(self.to_feat(bottleneck_embeds))
-        recov_x = self.clip_decoder(self.post_quant_conv(self.to_image(quantized))).squeeze(1)
+        quantized, indices, commit_loss = self.VQ(bottleneck_embeds)
+        recov_x = self.clip_decoder(self.post_quant_conv(quantized)).squeeze(1)
+        denorm_recov_x = (self.image_std.to(accel.device) * recov_x + self.image_mean.to(accel.device)).mean(dim=1)
 
-        rec_loss = F.mse_loss(recov_x, m_resize)
-        bce_loss = F.binary_cross_entropy_with_logits(recov_x, m_resize)
+        l1_rec_loss = torch.abs(denorm_recov_x - shuffled_mask_tensor).mean()
+        l2_rec_loss = F.mse_loss(denorm_recov_x, shuffled_mask_tensor)
+        bce_loss = F.binary_cross_entropy_with_logits(denorm_recov_x, shuffled_mask_tensor)
 
-        return recov_x, indices, commit_loss + rec_loss + bce_loss
+
+        # Visualization
+        # i=0
+        # a = shuffled_mask_tensor[i].cpu().numpy()
+        # b = denorm_recov_x[i]>0
+
+        return recov_x, indices, commit_loss + l1_rec_loss + l2_rec_loss + bce_loss
 
 def prepare_clip():
     return VQCLIP()
