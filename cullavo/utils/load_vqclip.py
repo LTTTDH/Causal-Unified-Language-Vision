@@ -143,8 +143,6 @@ class VQCLIP(nn.Module):
 
         # ENCODER
         self.clip_encoder = CLIPModel.from_pretrained(CLIPLARGE_LOCAL_PATH)
-        for param in self.clip_encoder.parameters(): param.requires_grad_(False)
-        self.clip_encoder = self.clip_encoder.eval()
         self.clip_processor = CLIPProcessor.from_pretrained(CLIPLARGE_LOCAL_PATH)
         
         # Bottleneck

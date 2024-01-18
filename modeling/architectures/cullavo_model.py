@@ -100,7 +100,6 @@ class CuLLaVO(nn.Module):
     # CuLLaVO
     def forward_vqclip(self, batched_inputs, accel):
         max_num_instances = 10
-        loss_vqclip_list = []
 
         masks_list = []
         masked_image_list = []
@@ -115,7 +114,6 @@ class CuLLaVO(nn.Module):
         id = torch.randperm(len(masked_image_tensor))[:max_num_instances]
         shuffled_masked_image_tensor = masked_image_tensor[id]
         shuffled_mask_tensor = mask_tensor[id]
-        loss_vqclip_list.append(self.vq_clip(shuffled_masked_image_tensor, shuffled_mask_tensor, accel)[2])
 
         # Visualization
         # a = masked_image[0].permute(1,2,0).cpu().numpy()
@@ -125,7 +123,7 @@ class CuLLaVO(nn.Module):
         # e = self.vq_clip(images, accel)[0][0].permute(1,2,0).detach().float().cpu().numpy()
         # n = lambda x: (x-x.min()) / (x.max()-x.min())
         # f = n(d)
-        return {'loss_clip': sum(loss_vqclip_list)/len(loss_vqclip_list)}
+        return {'loss_clip': self.vq_clip(shuffled_masked_image_tensor, shuffled_mask_tensor, accel)[2]}
 
     # CuLLaVO
     def forward_seg_with_cullavo(self, batched_inputs, accel):
