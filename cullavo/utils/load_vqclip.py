@@ -105,7 +105,7 @@ class NonLocalBlock(nn.Module):
 class Decoder(nn.Module):
     def __init__(self):
         super(Decoder, self).__init__()
-        channels = [512, 256, 256, 128, 128]
+        channels = [512, 512, 256, 256, 128, 128]
         attn_resolutions = [16]
         num_res_blocks = 3
         resolution = 16
@@ -185,18 +185,16 @@ class VQCLIP(nn.Module):
     def to_feat(x):
         return x.view(x.shape[0], x.shape[1], -1).permute(0, 2, 1)
 
-    def forward(self, x, accel):
-        x_label = F.interpolate(x[:,0].clone().unsqueeze(1).float(), size=(96,96), mode='bicubic').squeeze(1).bool().float()
-        x_to_image = x.bool().float() * 255
-        clip_inputs = self.clip_processor(images=x_to_image, return_tensors='pt')
-        x_norm_label = F.interpolate(clip_inputs.pixel_values.to(accel.device)[:,0].unsqueeze(1), size=(96,96), mode='bicubic').squeeze(1)
+    def forward(self, x, m, accel):
+        m_resize = F.interpolate(m.unsqueeze(1).float(), size=(192,192), mode='bicubic').squeeze(1).bool().float()
+        clip_inputs = self.clip_processor(images=x, return_tensors='pt')
         clip_embeds = self.clip_encoder.vision_model(pixel_values=clip_inputs.pixel_values.to(accel.device), output_hidden_states=True).hidden_states[-2][:,1:]
         bottleneck_embeds = self.bottleneck(self.pre_quant_conv(self.to_image(clip_embeds)))
         quantized, indices, commit_loss = self.LFQ(self.to_feat(bottleneck_embeds))
         recov_x = self.clip_decoder(self.post_quant_conv(self.to_image(quantized))).squeeze(1)
 
-        rec_loss = F.mse_loss(recov_x, x_norm_label)
-        bce_loss = F.binary_cross_entropy_with_logits(recov_x, x_label)
+        rec_loss = F.mse_loss(recov_x, m_resize)
+        bce_loss = F.binary_cross_entropy_with_logits(recov_x, m_resize)
 
         return recov_x, indices, commit_loss + rec_loss + bce_loss
 

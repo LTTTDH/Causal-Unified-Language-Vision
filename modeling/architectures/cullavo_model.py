@@ -99,18 +99,24 @@ class CuLLaVO(nn.Module):
 
     # CuLLaVO
     def forward_vqclip(self, batched_inputs, accel):
-        max_num_instances = 1
+        max_num_instances = 10
         loss_vqclip_list = []
+
+        masks_list = []
+        masked_image_list = []
         for batch in batched_inputs:
             masks = batch['instances'].gt_masks
-            if masks.shape[0]==0: continue
-            id = torch.randperm(len(masks))[:max_num_instances]
-            masked_image = masks[id].unsqueeze(1).repeat(1, 3, 1, 1)
-            loss_vqclip_list.append(self.vq_clip(masked_image, accel)[2])
-        accel.wait_for_everyone()
+            masked_images = masks.unsqueeze(1).repeat(1, 3, 1, 1) * batch['image']
+            masked_image_list.append(masked_images)
+            masks_list.append(masks)
+        masked_image_tensor = torch.cat(masked_image_list, dim=0)
+        mask_tensor = torch.cat(masks_list, dim=0)
 
-        if len(loss_vqclip_list)==0: print("Hello"); return {'loss_clip': torch.zeors([0]).to(accel.device).requires_grad_(True)}
-        
+        id = torch.randperm(len(masked_image_tensor))[:max_num_instances]
+        shuffled_masked_image_tensor = masked_image_tensor[id]
+        shuffled_mask_tensor = mask_tensor[id]
+        loss_vqclip_list.append(self.vq_clip(shuffled_masked_image_tensor, shuffled_mask_tensor, accel)[2])
+
         # Visualization
         # a = masked_image[0].permute(1,2,0).cpu().numpy()
         # b = batch['image'].permute(1,2,0).cpu().numpy()
