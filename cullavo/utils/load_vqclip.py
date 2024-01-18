@@ -1,12 +1,9 @@
-import os
 import math
 import torch
-import numpy as np
 from .utils import *
 import torch.nn as nn
 from .VQ import VectorQuantize
 import torch.nn.functional as F
-from collections import namedtuple
 from transformers import CLIPProcessor, CLIPModel
 
 class GroupNorm(nn.Module):
@@ -212,8 +209,8 @@ class VQCLIP(nn.Module):
         clip_inputs = self.clip_processor(images=shuffled_masked_image_tensor, return_tensors='pt')
         clip_embeds = self.clip_encoder.vision_model(pixel_values=clip_inputs.pixel_values.to(accel.device), output_hidden_states=True).hidden_states[-2][:,1:]
         bottleneck_embeds = self.bottleneck(self.pre_quant_conv(self.to_image(clip_embeds)))
-        quantized, indices, commit_loss = self.VQ(bottleneck_embeds)
-        recov_x = self.clip_decoder(self.post_quant_conv(quantized)).squeeze(1)
+        quantized, indices, commit_loss = self.VQ(self.to_feat(bottleneck_embeds))
+        recov_x = self.clip_decoder(self.post_quant_conv(self.to_image(quantized))).squeeze(1)
         denorm_recov_x = (self.image_std.to(accel.device) * recov_x + self.image_mean.to(accel.device)).mean(dim=1)
 
         l1_rec_loss = torch.abs(denorm_recov_x - shuffled_mask_tensor).mean()
