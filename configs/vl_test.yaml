@@ -15,7 +15,7 @@ LLM:
 # Define Test/Trainer/Saving
 PIPELINE: InstructBLIPImageNetPipeline #LLaVAVQAPipeline/LLaVAVQAPipeline_TEST/BakLLaVAVQAPipeline/LLaVAVQAPipeline_TEST/BLIP2VQAPipeline/InstructBLIPVQAPipeline/KOSMOS2VQAPipeline
 TRAINER: xdecoder
-SAVE_DIR: '/mnt/ssd/lbk-cvpr/CuLLaVO'
+SAVE_DIR: '/mnt/hard/lbk-cvpr/CuLLaVO'
 base_path: "./"
 
 # Resume Logistic

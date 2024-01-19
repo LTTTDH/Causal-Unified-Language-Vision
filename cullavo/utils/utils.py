@@ -1,4 +1,4 @@
-ROOT_PATH = "/mnt/ssd/lbk-cvpr/checkpoints/"
+ROOT_PATH = "/mnt/hard/lbk-cvpr/checkpoints/"
 BAKLLAVA_LOCAL_PATH = ROOT_PATH + "huggingface/hub/models--llava-hf--bakLlava-v1-hf/snapshots/f038f156966ff4d24078b260e9e9761fd480d325"
 LLAVA_LOCAL_PATH = ROOT_PATH + "huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6b7135519bd7a7f93a03c1f8ddae0ce9dfa1a7af"
 KOSMOS2_LOCAL_PATH = ROOT_PATH + "huggingface/hub/models--microsoft--kosmos-2-patch14-224/snapshots/e91cfbcb4ce051b6a55bfb5f96165a3bbf5eb82c"

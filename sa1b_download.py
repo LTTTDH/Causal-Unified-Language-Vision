@@ -1,10 +1,8 @@
 import os
-import tarfile
-from multiprocessing import Pool
 import argparse
 import requests
 
-def download_and_extract(args, skip_existing=False):
+def download_and_extract(args):
     file_name, url, raw_dir, images_dir, masks_dir = args
     
     # Download the file
@@ -17,7 +15,7 @@ def download_and_extract(args, skip_existing=False):
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description='Download and extract files.')
-parser.add_argument('--processes', type=int, default=8, help='Number of processes to use for downloading and extracting files.')
+parser.add_argument('--processes', type=int, default=4, help='Number of processes to use for downloading and extracting files.')
 parser.add_argument('--input_file', type=str, default='sa1b.txt', help='Path to the input file containing file names and URLs.')
 parser.add_argument('--raw_dir', type=str, default='/mnt/hard/lbk-cvpr/dataset/ShareGPT4V/data/sam', help='Directory to store downloaded files.')
 parser.add_argument('--images_dir', type=str, default='/mnt/hard/lbk-cvpr/dataset/ShareGPT4V/data/sam/images', help='Directory to store extracted image files.')
@@ -41,7 +39,10 @@ os.makedirs(args.images_dir, exist_ok=True)
 os.makedirs(args.masks_dir, exist_ok=True)
 
 # Download and extract the files in parallel
-with Pool(processes=args.processes) as pool:
-    pool.starmap(download_and_extract, [(new_line.strip().split('\t') + [args.raw_dir, args.images_dir, args.masks_dir], args.skip_existing) for new_line in new_lines])
+# with Pool(processes=args.processes) as pool:
+#     pool.starmap(download_and_extract, [(new_line.strip().split('\t') + [args.raw_dir, args.images_dir, args.masks_dir], args.skip_existing) for new_line in new_lines])
+
+for new_line in new_lines:
+    download_and_extract(new_line.strip().split('\t') + [args.raw_dir, args.images_dir, args.masks_dir])
 
 print('All files downloaded successfully!')    
