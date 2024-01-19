@@ -306,6 +306,9 @@ def get_config_from_name(cfg, dataset_name):
     elif 'instp' in dataset_name:
         cfg.update(cfg['INSTP'])
         return cfg
+    elif 'sharegpt' in dataset_name:
+        cfg.update(cfg['SHAREGPT'])
+        return cfg
     else:
         assert False, "dataset not support."
 
@@ -337,6 +340,8 @@ def build_eval_dataloader(cfg, ):
             mapper = InstructionDatasetMapper(cfg, False, dataset_name)
         elif dataset_name in ["instp_val", "instp_captioning_val", "instp_val2017", "instp_captioning_val2017"]:
             mapper = InstPreDatasetMapper(cfg, False, dataset_name)
+        elif dataset_name in ["sharegpt4v"]:
+            mapper = ShareGPTDatasetMapper(cfg, False, dataset_name)
         else:
             mapper = None
         dataloaders += [build_detection_test_loader(cfg, dataset_name, mapper=mapper)]
@@ -383,6 +388,9 @@ def build_train_dataloader(cfg, ):
             loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         elif mapper_name == "instp_train":
             mapper = InstPreDatasetMapper(cfg, True, dataset_name)
+            loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
+        elif mapper_name == "sharegpt":
+            mapper = ShareGPTDatasetMapper(cfg, True, dataset_name)
             loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         else:
             mapper = None

@@ -18,5 +18,6 @@ from . import (
     register_vqa_datasets,
     register_instp_datasets,
     register_instruction_datasets,
+    register_sharegpt_datasets,
     register_imagenet_cls
 )

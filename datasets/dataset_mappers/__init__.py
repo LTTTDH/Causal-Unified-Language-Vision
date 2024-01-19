@@ -13,3 +13,4 @@ from .refcoco_dataset_mapper import RefCOCODatasetMapper
 from .vqa_dataset_mapper import VQADatasetMapper
 from .instp_dataset_mapper import InstPreDatasetMapper
 from .instruction_dataset_mapper import InstructionDatasetMapper
+from .sharegpt_dataset_mapper import ShareGPTDatasetMapper

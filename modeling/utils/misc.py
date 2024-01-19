@@ -213,6 +213,8 @@ def get_class_names(name):
         return ["background"]
     elif 'instruction' in name:
         return ["background"]
+    elif 'sharegpt' in name:
+        return ["background"]
     else:
         assert False, "text dataset name {} is not defined".format(name)
 
