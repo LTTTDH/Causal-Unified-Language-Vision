@@ -42,10 +42,10 @@
             "COCO.TRAIN.BATCH_SIZE_PER_GPU", "2",
             "REF.TEST.BATCH_SIZE_TOTAL", "1",
             "VQA.TEST.BATCH_SIZE_TOTAL", "1", 
-            // "WEIGHT", "True", 
-            // "RESUME_FROM", 
-            // "/mnt/hard/lbk-cvpr/CuLLaVO/epoch2/CuLLaVO.pt"]
-            ]
+            "WEIGHT", "True", 
+            "RESUME_FROM", 
+            "/mnt/hard/lbk-cvpr/CuLLaVO/epoch2/CuLLaVO.pt"]
+            // ]
         }
     ]
 }

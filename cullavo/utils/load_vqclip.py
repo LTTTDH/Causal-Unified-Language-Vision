@@ -2,6 +2,7 @@ import math
 import torch
 from .utils import *
 import torch.nn as nn
+from .LFQ import LFQ
 from .VQ import VectorQuantize
 import torch.nn.functional as F
 from transformers import CLIPProcessor, CLIPModel
@@ -153,9 +154,7 @@ class VQCLIP(nn.Module):
         for param in self.clip_encoder.parameters(): param.requires_grad_(False);
         self.clip_encoder = self.clip_encoder.eval()
         self.clip_processor = CLIPProcessor.from_pretrained(CLIPLARGE_LOCAL_PATH)
-        self.image_mean = torch.tensor(self.clip_processor.image_processor.image_mean).view(1,-1,1,1)
-        self.image_std = torch.tensor(self.clip_processor.image_processor.image_std).view(1,-1,1,1)
-        
+
         # Bottleneck
         self.bottleneck = nn.Sequential(nn.Conv2d(1024, 1024, kernel_size=2, stride=2, padding=0),
                                         nn.GELU(),
@@ -168,13 +167,14 @@ class VQCLIP(nn.Module):
         self.post_quant_conv = torch.nn.Conv2d(1024, 1024, 1)
 
         # [VQ] Method
-                
+        self.VQ = LFQ(dim = 1024, codebook_size = 1024)
+
         # Normal VQ
-        self.VQ = VectorQuantize(
-                    dim = 1024,
-                    codebook_size = 1024,
-                    decay = 0.8,             
-                    commitment_weight = 1)
+        # self.VQ = VectorQuantize(
+        #             dim = 1024,
+        #             codebook_size = 1024,
+        #             decay = 0.8,             
+        #             commitment_weight = 1)
 
         # DECODER
         self.clip_decoder = Decoder()
@@ -211,17 +211,20 @@ class VQCLIP(nn.Module):
         bottleneck_embeds = self.bottleneck(self.pre_quant_conv(self.to_image(clip_embeds)))
         quantized, indices, commit_loss = self.VQ(self.to_feat(bottleneck_embeds))
         recov_x = self.clip_decoder(self.post_quant_conv(self.to_image(quantized))).squeeze(1)
-        denorm_recov_x = (self.image_std.to(accel.device) * recov_x + self.image_mean.to(accel.device)).mean(dim=1)
+        denorm_recov_x = recov_x.mean(dim=1).sigmoid()
 
         l1_rec_loss = torch.abs(denorm_recov_x - shuffled_mask_tensor).mean()
         l2_rec_loss = F.mse_loss(denorm_recov_x, shuffled_mask_tensor)
-        bce_loss = F.binary_cross_entropy_with_logits(denorm_recov_x, shuffled_mask_tensor)
+        bce_loss = F.binary_cross_entropy_with_logits(recov_x.mean(dim=1), shuffled_mask_tensor)
 
 
         # Visualization
-        # i=0
+        # i=10
         # a = shuffled_mask_tensor[i].cpu().numpy()
-        # b = denorm_recov_x[i]>0
+        # b = recov_x.mean(dim=1)[i]>0
+        # from .crf import apply_crf
+        # apply_crf(batched_inputs[1]['image'], )
+        # c = batched_inputs[1]['image'].permute(1,2,0).cpu().numpy()
 
         return recov_x, indices, commit_loss + l1_rec_loss + l2_rec_loss + bce_loss
 

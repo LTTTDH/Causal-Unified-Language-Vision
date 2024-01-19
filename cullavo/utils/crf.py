@@ -1,6 +1,4 @@
 import torch
-from functools import partial
-import torch.nn.functional as F
 import torchvision.transforms.functional as VF
 import numpy as np
 
@@ -16,12 +14,11 @@ def dense_crf(image_tensor: torch.FloatTensor, output_logits: torch.FloatTensor,
     Bi_RGB_STD = 3
 
     image = np.array(VF.to_pil_image(image_tensor))[:, :, ::-1]
-    H, W = image.shape[:2]
     image = np.ascontiguousarray(image)
 
-    output_logits = F.interpolate(output_logits.unsqueeze(0), size=(H, W), mode="bilinear",
-                                  align_corners=False).squeeze()
-    output_probs = F.softmax(output_logits, dim=0).cpu().numpy()
+    temp = 1
+    output_probs = torch.sigmoid((output_logits-0.5)/temp)
+    output_probs = torch.stack([1-output_probs, output_probs]).cpu().numpy()
     c = output_probs.shape[0]
     h = output_probs.shape[1]
     w = output_probs.shape[2]
@@ -38,9 +35,6 @@ def dense_crf(image_tensor: torch.FloatTensor, output_logits: torch.FloatTensor,
     Q = np.array(Q).reshape((c, h, w))
     return Q
 
-def _apply_crf(tup, max_iter):
-    return dense_crf(tup[0], tup[1], max_iter=max_iter)
-
-def do_crf(pool, img_tensor, prob_tensor, max_iter=10):
-    outputs = pool.map(partial(_apply_crf, max_iter=max_iter), zip(img_tensor.detach().cpu(), prob_tensor.detach().cpu()))
-    return torch.cat([torch.from_numpy(arr).unsqueeze(0) for arr in outputs], dim=0)
+def apply_crf(image, logit, max_iter):
+    outputs = dense_crf(image.cpu(), logit.cpu(), max_iter=max_iter)
+    return outputs

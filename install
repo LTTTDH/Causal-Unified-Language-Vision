@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+conda create -n icml24 python=3.9
+conda activate icml24
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install -r assets/requirements/requirements.txt
+pip install -r assets/requirements/requirements_custom.txt
