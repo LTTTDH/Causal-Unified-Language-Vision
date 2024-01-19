@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Stage0 (VQ-CLIP)
-GPU_DEVICE="0,1,2,3,4,5,6,7"
+GPU_DEVICE="4"
 length=${#GPU_DEVICE}
 n_gpu=$(((length+1)/2))
 image_bath=20
@@ -13,7 +13,7 @@ CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
             --num_processes=$n_gpu \
             --main_process_port=10000 \
             entry.py train \
-            --conf_files configs/cullavo_step0.yaml \
+            --conf_files configs/cullavo_step1.yaml \
             --overrides \
             WANDB False \
             PIPELINE CuLLaVOPipeline\

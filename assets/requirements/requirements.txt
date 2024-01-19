@@ -10,6 +10,7 @@ nltk
 cython
 pycocotools
 scikit-image
+bitsandbytes
 accelerate
 peft
 deepspeed

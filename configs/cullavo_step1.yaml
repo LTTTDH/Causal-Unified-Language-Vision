@@ -21,7 +21,7 @@ OPTMIZER:
 
 # VQ-CLIP
 VQCLIP:
-  LOAD_VQCLIP: true # CLIP
+  LOAD_VQCLIP: false # CLIP
 
 # CuLLaVO LLM
 LLM:

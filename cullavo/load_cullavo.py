@@ -1,6 +1,6 @@
 import torch
 
-from .utils.utils import LLAVA_LOCAL_PATH
+from .utils.utils import LLAVA_LOCAL_PATH, SHAREGPT4V7B_PATH
 from .arch_cullavo import CuLLaVOModel
 from transformers import AutoProcessor
 from peft import prepare_model_for_kbit_training
@@ -40,7 +40,7 @@ def prepare_cullavo(bits, grad_ckpt, lora):
         ))
 
     # LLaVA 8Bit compression
-    cullavo_model = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, **bnb_model_from_pretrained_args)
+    cullavo_model = CuLLaVOModel.from_pretrained(SHAREGPT4V7B_PATH, **bnb_model_from_pretrained_args)
 
     if bits in [4, 8] and lora:
         cullavo_model.language_model.config.use_cache = False

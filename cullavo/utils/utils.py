@@ -1,4 +1,4 @@
-ROOT_PATH = "/mnt/hard/lbk-cvpr/checkpoints/"
+ROOT_PATH = "/mnt/ssd/lbk-cvpr/checkpoints/"
 BAKLLAVA_LOCAL_PATH = ROOT_PATH + "huggingface/hub/models--llava-hf--bakLlava-v1-hf/snapshots/f038f156966ff4d24078b260e9e9761fd480d325"
 LLAVA_LOCAL_PATH = ROOT_PATH + "huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6b7135519bd7a7f93a03c1f8ddae0ce9dfa1a7af"
 KOSMOS2_LOCAL_PATH = ROOT_PATH + "huggingface/hub/models--microsoft--kosmos-2-patch14-224/snapshots/e91cfbcb4ce051b6a55bfb5f96165a3bbf5eb82c"
@@ -6,3 +6,5 @@ CLIPLARGE_LOCAL_PATH = ROOT_PATH + "huggingface/hub/models--openai--clip-vit-lar
 BLIP2_LOCAL_PATH = ROOT_PATH + "huggingface/hub/models--Salesforce--blip2-flan-t5-xl/snapshots/e5025a34e3e769e72e2aab7f7bfd00bc84d5fd77"
 INSTRUCTBLIP_LOCAL_PATH = ROOT_PATH + "huggingface/hub/models--Salesforce--instructblip-vicuna-7b/snapshots/ef9d8b3bcb7a0422d7b33a8917e867944312ef22"
 LLAMA2_LOCAL_PATH = ROOT_PATH + "llama-2-7b_hf"
+SHAREGPT4V7B_PATH =ROOT_PATH + "huggingface/hub/models--Lin-Chen--ShareGPT4V-7B/snapshots/a973da7d8dba5e9ac2817f1c88bf9c8f36004078"
+SHAREGPT4V13B_PATH = ROOT_PATH + "huggingface/hub/models--Lin-Chen--ShareGPT4V-13B/snapshots/6f8da9706715829cc5c4a46ebd979124f649e7a1"
