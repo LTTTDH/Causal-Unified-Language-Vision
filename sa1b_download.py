@@ -7,16 +7,12 @@ import requests
 def download_and_extract(args, skip_existing=False):
     file_name, url, raw_dir, images_dir, masks_dir = args
     
-    # Check if the file already exists
-    if not os.path.exists(f'{raw_dir}/{file_name}'):
-        # Download the file
-        print(f'Downloading {file_name} from {url}...')
-        response = requests.get(url, stream=True)
-        with open(f'{raw_dir}/{file_name}', 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-    else:
-        print(f'{file_name} already exists in {raw_dir}. Skipping download.')
+    # Download the file
+    print(f'Downloading {file_name} from {url}...')
+    response = requests.get(url, stream=True)
+    with open(f'{raw_dir}/{file_name}', 'wb') as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
 
 
 # Parse command-line arguments

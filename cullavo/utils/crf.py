@@ -5,7 +5,7 @@ import numpy as np
 import pydensecrf.densecrf as dcrf
 import pydensecrf.utils as utils
 
-def dense_crf(image_tensor: torch.FloatTensor, output_logits: torch.FloatTensor, max_iter: int):
+def dense_crf(image_tensor: torch.FloatTensor, output_probs: torch.FloatTensor, max_iter: int):
     MAX_ITER = max_iter
     POS_W = 3
     POS_XY_STD = 1
@@ -16,9 +16,7 @@ def dense_crf(image_tensor: torch.FloatTensor, output_logits: torch.FloatTensor,
     image = np.array(VF.to_pil_image(image_tensor))[:, :, ::-1]
     image = np.ascontiguousarray(image)
 
-    temp = 1
-    output_probs = torch.sigmoid((output_logits-0.5)/temp)
-    output_probs = torch.stack([1-output_probs, output_probs]).cpu().numpy()
+    output_probs = output_probs.cpu().numpy()
     c = output_probs.shape[0]
     h = output_probs.shape[1]
     w = output_probs.shape[2]
@@ -36,5 +34,5 @@ def dense_crf(image_tensor: torch.FloatTensor, output_logits: torch.FloatTensor,
     return Q
 
 def apply_crf(image, logit, max_iter):
-    outputs = dense_crf(image.cpu(), logit.cpu(), max_iter=max_iter)
+    outputs = dense_crf(image.cpu(), logit.detach().cpu(), max_iter=max_iter)
     return outputs

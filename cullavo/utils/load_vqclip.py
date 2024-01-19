@@ -137,7 +137,7 @@ class Decoder(nn.Module):
 
         layers.append(GroupNorm(in_channels))
         layers.append(Swish())
-        layers.append(nn.Conv2d(in_channels, 3, 3, 1, 1))
+        layers.append(nn.Conv2d(in_channels, 2, 3, 1, 1))
         self.model = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -195,7 +195,7 @@ class VQCLIP(nn.Module):
         masked_image_list = []
         for batch in batched_inputs:
             masks = batch['instances'].gt_masks
-            masked_images = masks.unsqueeze(1).repeat(1, 3, 1, 1) * batch['image']
+            # masked_images = masks.unsqueeze(1).repeat(1, 3, 1, 1) * batch['image']
             masked_images = masks.unsqueeze(1).repeat(1, 3, 1, 1).bool().float() * 255
             masked_image_list.append(masked_images)
             masks_list.append(masks.bool().float())
@@ -211,22 +211,19 @@ class VQCLIP(nn.Module):
         bottleneck_embeds = self.bottleneck(self.pre_quant_conv(self.to_image(clip_embeds)))
         quantized, indices, commit_loss = self.VQ(self.to_feat(bottleneck_embeds))
         recov_x = self.clip_decoder(self.post_quant_conv(self.to_image(quantized))).squeeze(1)
-        denorm_recov_x = recov_x.mean(dim=1).sigmoid()
-
-        l1_rec_loss = torch.abs(denorm_recov_x - shuffled_mask_tensor).mean()
-        l2_rec_loss = F.mse_loss(denorm_recov_x, shuffled_mask_tensor)
-        bce_loss = F.binary_cross_entropy_with_logits(recov_x.mean(dim=1), shuffled_mask_tensor)
-
+        logit_recov_x = F.softmax(recov_x, dim=1)
+        entropy_loss = F.cross_entropy(logit_recov_x, shuffled_mask_tensor.to(torch.int64))
 
         # Visualization
-        # i=10
+        # i=1
         # a = shuffled_mask_tensor[i].cpu().numpy()
-        # b = recov_x.mean(dim=1)[i]>0
+        # b = shuffled_masked_image_tensor[i].permute(1,2,0).cpu().numpy()
+        # c = logit_recov_x.argmax(dim=1) * 255
+        # d = batched_inputs[0]['image'].permute(1,2,0).cpu().numpy()
         # from .crf import apply_crf
-        # apply_crf(batched_inputs[1]['image'], )
-        # c = batched_inputs[1]['image'].permute(1,2,0).cpu().numpy()
+        # outputs = apply_crf(batched_inputs[0]['image'], logit_recov_x[i].to(torch.float16), max_iter=10).argmax(axis=0) * 255
 
-        return recov_x, indices, commit_loss + l1_rec_loss + l2_rec_loss + bce_loss
+        return recov_x, indices, commit_loss + entropy_loss
 
 def prepare_clip():
     return VQCLIP()
