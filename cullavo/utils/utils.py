@@ -6,5 +6,3 @@ CLIPLARGE_LOCAL_PATH = ROOT_PATH + "huggingface/hub/models--openai--clip-vit-lar
 BLIP2_LOCAL_PATH = ROOT_PATH + "huggingface/hub/models--Salesforce--blip2-flan-t5-xl/snapshots/e5025a34e3e769e72e2aab7f7bfd00bc84d5fd77"
 INSTRUCTBLIP_LOCAL_PATH = ROOT_PATH + "huggingface/hub/models--Salesforce--instructblip-vicuna-7b/snapshots/ef9d8b3bcb7a0422d7b33a8917e867944312ef22"
 LLAMA2_LOCAL_PATH = ROOT_PATH + "llama-2-7b_hf"
-SHAREGPT4V7B_PATH =ROOT_PATH + "huggingface/hub/models--Lin-Chen--ShareGPT4V-7B/snapshots/a973da7d8dba5e9ac2817f1c88bf9c8f36004078"
-SHAREGPT4V13B_PATH = ROOT_PATH + "huggingface/hub/models--Lin-Chen--ShareGPT4V-13B/snapshots/6f8da9706715829cc5c4a46ebd979124f649e7a1"
