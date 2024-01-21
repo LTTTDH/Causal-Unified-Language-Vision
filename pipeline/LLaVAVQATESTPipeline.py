@@ -55,7 +55,7 @@ class LLaVAVQATESTPipeline:
                 
             # temp solution for lr scheduler
             steps_total = len(self.train_loader)
-            steps_acc = self._opt['LLM']['GRAD_CUM']
+            steps_acc = self._opt['OPTIMIZER']['GRAD_CUM']
             steps_update = steps_total // steps_acc
             self._opt["LR_SCHEDULER_PARAMS"]["steps_update_per_epoch"] = steps_update
         return dataloader

@@ -9,9 +9,9 @@ def dense_crf(image_tensor: torch.FloatTensor, output_probs: torch.FloatTensor, 
     MAX_ITER = max_iter
     POS_W = 3
     POS_XY_STD = 1
-    Bi_W = 4
-    Bi_XY_STD = 67
-    Bi_RGB_STD = 3
+    Bi_W = 1
+    Bi_XY_STD = 80
+    Bi_RGB_STD = 13
 
     image = np.array(VF.to_pil_image(image_tensor))[:, :, ::-1]
     image = np.ascontiguousarray(image)

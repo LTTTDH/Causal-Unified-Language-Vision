@@ -69,21 +69,33 @@ def prepare_cullavo(bits, grad_ckpt, lora):
 
     # Bfloat16  
     if bits in [4, 8]:
-        for param in cullavo_model.parameters():
-            if 'float32' in str(param.dtype).lower():
+        for name, param in cullavo_model.named_parameters():
+            if 'lora' in name:
                 param.data = param.data.to(torch.bfloat16)
-
+            elif 'norm' in name:
+                param.data = param.data.to(torch.bfloat16)
+            else:
+                param.data = param.data.to(torch.bfloat16)
+            
     # Training Linear Connection
     for param in cullavo_model.multi_modal_projector.parameters():
+        param.requires_grad_(True)
+
+    # Training LM Head
+    for param in cullavo_model.language_model.lm_head.parameters():
         param.requires_grad_(True)
     
     # Add tokens to tokenzier for CuLLaVO
     cullavo_processor = AutoProcessor.from_pretrained(LLAVA_LOCAL_PATH, padding_side='right')
-    cullavo_processor.tokenizer.add_tokens('<background>', special_tokens=True)
-    cullavo_processor.tokenizer.add_tokens('<object>', special_tokens=True)
+    for i in range(64):
+        cullavo_processor.tokenizer.add_tokens(f'<{i}>', special_tokens=False)
     
     # Resize Word Embedding
     cullavo_model.resize_token_embeddings(len(cullavo_processor.tokenizer))
+
+    # Training Word Embed
+    for param in cullavo_model.get_input_embeddings().parameters():
+        param.requires_grad_(True)
     
     return cullavo_model, cullavo_processor
 

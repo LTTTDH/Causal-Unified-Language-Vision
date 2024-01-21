@@ -6,12 +6,6 @@ from transformers.utils.generic import ModelOutput
 from transformers import LlavaForConditionalGeneration
 from utils.constants import COCO_PANOPTIC_CLASSES
 
-import cv2
-import numpy as np
-import pycocotools.mask as mask_util
-import torch.nn.functional as F
-
-
 @dataclass
 class CullavoCausalLMOutputWithPast(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
@@ -26,70 +20,8 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
     def __init__(self, config):
         super().__init__(config)
         
-    def _merge_input_ids_with_image_features(
-        self, image_features, inputs_embeds, input_ids, attention_mask, position_ids
-    ):
-        num_images, num_image_patches, embed_dim = image_features.shape
-        batch_size, sequence_length = input_ids.shape
-        left_padding = not torch.sum(input_ids[:, -1] == torch.tensor(self.pad_token_id))
-        # 1. Create a mask to know where special image tokens are
-        special_image_token_mask = input_ids == self.config.image_token_index
-        num_special_image_tokens = torch.sum(special_image_token_mask, dim=-1)
-        # Compute the maximum embed dimension
-        max_embed_dim = (num_special_image_tokens.max() * (num_image_patches - 1)) + sequence_length
-        batch_indices, non_image_indices = torch.where(input_ids != self.config.image_token_index)
-
-        # 2. Compute the positions where text should be written
-        # Calculate new positions for text tokens in merged image-text sequence.
-        # `special_image_token_mask` identifies image tokens. Each image token will be replaced by `nb_text_tokens_per_images - 1` text tokens.
-        # `torch.cumsum` computes how each image token shifts subsequent text token positions.
-        # - 1 to adjust for zero-based indexing, as `cumsum` inherently increases indices by one.
-        new_token_positions = torch.cumsum((special_image_token_mask * (num_image_patches - 1) + 1), -1) - 1
-        nb_image_pad = max_embed_dim - 1 - new_token_positions[:, -1]
-        if left_padding:
-            new_token_positions += nb_image_pad[:, None]  # offset for left padding
-        text_to_overwrite = new_token_positions[batch_indices, non_image_indices]
-
-        # 3. Create the full embedding, already padded to the maximum position
-        final_embedding = torch.zeros(
-            batch_size, max_embed_dim, embed_dim, dtype=inputs_embeds.dtype, device=inputs_embeds.device
-        )
-        final_attention_mask = torch.zeros(
-            batch_size, max_embed_dim, dtype=attention_mask.dtype, device=inputs_embeds.device
-        )
-
-        # 4. Fill the embeddings based on the mask. If we have ["hey" "<image>", "how", "are"]
-        # we need to index copy on [0, 577, 578, 579] for the text and [1:576] for the image features
-        final_embedding[batch_indices, text_to_overwrite] = inputs_embeds[batch_indices, non_image_indices]
-        final_attention_mask[batch_indices, text_to_overwrite] = attention_mask[batch_indices, non_image_indices]
-
-        # 5. Fill the embeddings corresponding to the images. Anything that is still zeros needs filling
-        image_to_overwrite = torch.all(final_embedding == 0, dim=-1)
-        image_to_overwrite &= image_to_overwrite.cumsum(-1) - 1 >= nb_image_pad[:, None]
-
-        if image_to_overwrite.sum() != image_features.shape[:-1].numel():
-            raise ValueError(
-                f"The input provided to the model are wrong. The number of image tokens is {torch.sum(special_image_token_mask)} while"
-                f" the number of image given to the model is {num_images}. This prevents correct indexing and breaks batch generation."
-            )
-
-        final_embedding[image_to_overwrite] = image_features.contiguous().reshape(-1, embed_dim)
-        final_attention_mask |= image_to_overwrite
-        position_ids = (final_attention_mask.cumsum(-1) - 1).masked_fill_((final_attention_mask == 0), 1)
-        return final_embedding, final_attention_mask, position_ids        
-
-
     @staticmethod
-    def boxclass2string(boxes, classes):
-        out = '['
-        for i, (b, c) in enumerate(zip(boxes, classes)):
-            out+=f"({list(map(lambda x: round(x, 3), b.tolist()))}, {c})"
-            if i!=len(boxes)-1: out+=', '
-        out += ']'
-        return out
-    
-    @staticmethod
-    def class2string(classes):
+    def classes2string(classes):
         out = ''
         for i, x in enumerate(classes):
             out+=f"{x}"
@@ -97,80 +29,38 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         return out
 
     @staticmethod
-    def box2string(boxes):
+    def boxes2string(boxes):
         out = ''
         for i, x in enumerate(boxes):
-            out+=f"{i+1}.{list(map(lambda x: round(x, 4), x.tolist()))}"
+            out+=CuLLaVOModel.box2string(x)
             if i!=len(boxes)-1: out+=', '
         return out
 
     @staticmethod
-    def seq2string(seq):
+    def box2string(box):
         out = '['
-        for i, x in enumerate(seq):
-            out+=f"{x}"
-            if i!=len(seq)-1: out+=', '
-        out+=']'
+        for i, x in enumerate(box):
+            out+=f"{round(x.item(), 3):.3f}"
+            if i!=len(box)-1: out+=', '
+        out += ']'
         return out
 
     @staticmethod
-    def seq2mask(seq, height=24, width=24):
-        out=''
-        for i in range(height*width):
-            if i+1 in seq:
-                out+='1'
-            else:
-                out+='0'
-        return torch.tensor(list(map(int, [*out]))).reshape(height, width).bool()
-    
+    def segs2string(segs):
+        out = ''
+        for i, x in enumerate(segs):
+            out+=CuLLaVOModel.seg2string(x)
+            if i!=len(segs)-1: out+=', '
+        return out
+
     @staticmethod
-    def mask2seq(small_mask):
-        seq = []
-        for i, m in enumerate(small_mask.flatten()):
-            if m:
-                seq.append(i+1)
-        return torch.tensor(seq)
-    
-    @staticmethod
-    def poly2mask(poly, height=1024, width=1024):
-        # LBK + Detectron2
-        def scale(x):
-            x[:,0] = x[:,0] * width
-            x[:,1] = x[:,1] * height
-            return x
-        poly_numpy = [x.reshape(-1) for x in list(map(scale, [np.stack(x) for x in poly]))]
-        rle = mask_util.frPyObjects(poly_numpy, height, width)
-        rle = mask_util.merge(rle)
-        return torch.from_numpy(mask_util.decode(rle)[:, :]).bool()
-    
-    @staticmethod
-    def mask2poly(mask, height=1024, width=1024):
-        # LBK + Detectron2
-        # cv2.RETR_CCOMP flag retrieves all the contours and arranges them to a 2-level
-        # hierarchy. External contours (boundary) of the object are placed in hierarchy-1.
-        # Internal contours (holes) are placed in hierarchy-2.
-        # cv2.CHAIN_APPROX_NONE flag gets vertices of polygons from contours.
-        mask = np.ascontiguousarray(mask)  # some versions of cv2 does not support incontiguous arr
-        res = cv2.findContours(mask.astype("uint8"), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
-        hierarchy = res[-1]
-        if hierarchy is None:  # empty mask
-            return [], False
-        has_holes = (hierarchy.reshape(-1, 4)[:, 3] >= 0).sum() > 0
-        res = res[-2]
-        res = [x.flatten() for x in res]
-        # These coordinates from OpenCV are integers in range [0, W-1 or H-1].
-        # We add 0.5 to turn them into real-value coordinate space. A better solution
-        # would be to first +0.5 and then dilate the returned polygon by 0.5.
-        res = [x + 0.5 for x in res if len(x) >= 6]
-        
-        # normalizing and reshaping
-        def resize_and_scale(x):
-            x = x.reshape(-1, 2)
-            x[:,0] = x[:,0] / width
-            x[:,1] = x[:,1] / height
-            return x
-        res = [np.round(resize_and_scale(x), 3) for x in res]        
-        return res, has_holes
+    def seg2string(seg):
+        out = '[ '
+        for i, x in enumerate(seg):
+            out+=f"<{x}>"
+            if i!=len(seg)-1: out+=', '
+        out+=' ]'
+        return out
 
     @staticmethod
     def make_system_prompt(processor, device, ignore_index):
@@ -207,60 +97,22 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         
         return cullavo_prompt, cullavo_label
 
-    @staticmethod
-    def custom_process(
-        inputs,
+    def eval_process(
+        self,
+        images,
         prompt,
         processor,
         device):
         batched_cullavo_prompt=[]
-        for input in inputs:
 
-            # cullavo prompt init
-            cullavo_prompt = "<image> "
+        # cullavo prompt prefix
+        cullavo_prompt, _ = self.make_system_prompt(processor, device, self.config.ignore_index)
 
-            # CLASS
-            cullavo_prompt += prompt
-    
-            # making batched cullavo prompt
-            batched_cullavo_prompt.append(cullavo_prompt)
+        # CLASS
+        cullavo_prompt += f" USER: {prompt} ASSISTANT:"
         
         '''For Final Outputs'''
-        cullavo_inputs = \
-        processor(text=batched_cullavo_prompt, images=torch.stack([input['image'] for input in inputs]), padding=True, return_tensors="pt")
-        
-        # [1] input_ids
-        input_ids = cullavo_inputs.input_ids.to(device)
-        
-        # [2] pixel values
-        pixel_values = cullavo_inputs.pixel_values.to(device)
-        
-        # [3] attention_mask
-        attention_mask = cullavo_inputs.attention_mask.to(device)
-
-        return {"input_ids": input_ids, "pixel_values": pixel_values, "attention_mask": attention_mask,}
-
-
-    @staticmethod
-    def eval_process(
-        inputs,
-        processor,
-        device):
-        batched_cullavo_prompt=[]
-        for input in inputs:
-
-            # cullavo prompt init
-            cullavo_prompt = "<image> "
-
-            # CLASS
-            cullavo_prompt += "USER: what objects are in the image? ASSISTANT:"
-    
-            # making batched cullavo prompt
-            batched_cullavo_prompt.append(cullavo_prompt)
-        
-        '''For Final Outputs'''
-        cullavo_inputs = \
-        processor(text=batched_cullavo_prompt, images=torch.stack([input['image'] for input in inputs]), padding=True, return_tensors="pt")
+        cullavo_inputs = processor(text=cullavo_prompt, images=images, padding=True, return_tensors="pt")
         
         # [1] input_ids
         input_ids = cullavo_inputs.input_ids.to(device)
@@ -278,6 +130,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         self,
         inputs,
         processor,
+        vq_clip,
         device
     ):                    
         # fix num
@@ -321,7 +174,8 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         
         batched_cullavo_prompt=[]
         batched_cullavo_label=[]
-        for input in inputs:
+        removed_index_list=[]
+        for input_index, input in enumerate(inputs):
             # Shape
             _,H,W=input['image'].shape
              
@@ -329,15 +183,28 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             cullavo_prompt, cullavo_label = self.make_system_prompt(processor, device, self.config.ignore_index)
             
             # CLASSES
+            class_ids = input['instances'].gt_classes
             classes = [COCO_PANOPTIC_CLASSES[c].replace('-merged','').replace('-other','').replace('-stuff','') for c in input['instances'].gt_classes]
+            unique_class_ids = class_ids.unique()
+            unique_classes = [COCO_PANOPTIC_CLASSES[c].replace('-merged','').replace('-other','').replace('-stuff','') for c in unique_class_ids]
             
             # BOXES
             input['instances'].gt_boxes.scale(1/W,1/H)
             boxes = input['instances'].gt_boxes.tensor
             
             # MASKS
-            masks = input['instances'].gt_masks
-            small_masks = F.interpolate(masks.float().unsqueeze(1), size=(24, 24), mode='bicubic').squeeze(1).bool()
+            masks = input['instances'].gt_masks.bool().float()
+
+            # MASKED IMAGES
+            masked_image = masks.unsqueeze(1).repeat(1, 3, 1, 1) * input['image']
+
+            # TRY-EXCEPT
+            if masked_image.shape[0]==0:
+                removed_index_list.append(input_index)
+                continue
+            
+            # MASK INDICES by VQ-CLIP
+            mask_indices = vq_clip.quantize(masked_image, device)
             
             # LBK Visualization
             # m = masks[3]
@@ -345,40 +212,89 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             # seq = self.mask2seq(small_masks[0])
             # a = self.seq2mask(seq)
         
+            # Rolling dice 
+            rolling_dice = torch.randint(high=3, low=0, size=(1,)).item()
+            if rolling_dice==0:
+                # [OPT1] IMG -> CLS
+                cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                                                                                cullavo_label=cullavo_label, 
+                                                                                prompt=f"USER: provide the name of objects in this image. ASSISTANT:",
+                                                                                answer=self.classes2string(unique_classes),
+                                                                                processor=processor,
+                                                                                device=device,
+                                                                                ignore_index=self.config.ignore_index)
+            elif rolling_dice==1:
+                # Rolling dice 
+                rolling_dice = torch.randint(high=len(unique_class_ids), low=0, size=(1,)).item()
+                selected_class_id = unique_class_ids[rolling_dice]
+                selected_class = unique_classes[rolling_dice]
+                selected_index = torch.where(class_ids==selected_class_id)
+                selected_boxes = boxes[selected_index]
+
+                # [OPT2] CLS -> BOX
+                cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                                                                                cullavo_label=cullavo_label, 
+                                                                                prompt=f"USER: provide bounding box coordinate of {selected_class} in this image. ASSISTANT:",
+                                                                                answer=self.boxes2string(selected_boxes),
+                                                                                processor=processor,
+                                                                                device=device,
+                                                                                ignore_index=self.config.ignore_index)
+            elif rolling_dice==2:
+                # Rolling dice 
+                rolling_dice = torch.randint(high=len(unique_class_ids), low=0, size=(1,)).item()
+                selected_class_id = unique_class_ids[rolling_dice]
+                selected_class = unique_classes[rolling_dice]
+                selected_index = torch.where(class_ids==selected_class_id)
+                selected_segs = mask_indices[selected_index]
+
+                # [OPT3] CLS -> SEG
+                cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                                                                                cullavo_label=cullavo_label, 
+                                                                                prompt=f"USER: provide segmentation output of {selected_class} in this image. ASSISTANT:",
+                                                                                answer=self.segs2string(selected_segs),
+                                                                                processor=processor,
+                                                                                device=device,
+                                                                                ignore_index=self.config.ignore_index)
+
+
+
             # Random shuffling
-            rand_int = torch.randperm(small_masks.shape[0])[:fix_num]
+            rand_int = torch.randperm(masked_image.shape[0])[:fix_num]
 
             # Making cullavo prompt
             for r_int in rand_int:
-                if small_masks[r_int].sum()==0: continue
+                if masks[r_int].sum()==0: continue
                 cls = classes[r_int]
                 box = boxes[r_int]
-                seq = self.mask2seq(small_masks[r_int])
+                seg = mask_indices[r_int]
                 
-
                 # Rolling dice 
                 rolling_dice = torch.randint(high=3, low=0, size=(1,)).item()
                 if rolling_dice==0:
+                    # [OPT1] SEG -> BOX
                     cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
-                                                                                    prompt=f"USER: can you find a bounding box coordinate of object for image patch labels {seq.tolist()}?\nAnswer bounding box coordinate only ASSISTANT:",
+                                                                                    prompt=f"USER: provide bounding box coordinate of object for segmentation output {self.seg2string(seg)}. ASSISTANT:",
                                                                                     answer=self.box2string(box),
                                                                                     processor=processor,
                                                                                     device=device,
                                                                                     ignore_index=self.config.ignore_index)
+
                 elif rolling_dice==1:
+                    # [OPT2] SEG -> CLS
                     cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
-                                                                                    prompt=f"USER: do you know the class name of object for image patch labels {seq.tolist()} and bounding box coordinate {box.tolist()}?\nAnswer class name only ASSISTANT:", 
+                                                                                    prompt=f"USER: provide the name of the object that segmentation output {self.seg2string(seg)} represents. ASSISTANT:", 
                                                                                     answer=cls, 
                                                                                     processor=processor,
                                                                                     device=device,
                                                                                     ignore_index=self.config.ignore_index)
                 elif rolling_dice==2:
+                    # [OPT3] BOX, CLASS -> SEG
                     cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
-                                                                                    prompt=f"USER: can you get image patch labels of object for bounding box coordinate {box.tolist()} and class name {cls}?\nAnswer image patch labels only ASSISTANT:", 
-                                                                                    answer=self.seq2string(seq), 
+                                                                                    prompt=f"USER: provide segmentation output of object for bounding box coordinate {self.box2string(box)} and the name of object {cls}. ASSISTANT:", 
+                                                                                    answer=self.seg2string(seg), 
                                                                                     processor=processor,
                                                                                     device=device,
                                                                                     ignore_index=self.config.ignore_index)
@@ -397,52 +313,65 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 # BOXES
                 from detectron2.structures import Boxes
                 boxes = Boxes(input['groundings']['boxes'])
-                boxes.scale(1/W, 1/H)
-                
+                boxes.scale(1/W, 1/H)                
+
                 # MASKS
-                masks = input['groundings']['masks'].bool()
-                small_masks = F.interpolate(masks.float().unsqueeze(1), size=(24, 24), mode='bicubic').squeeze(1).bool()
+                masks = input['groundings']['masks'].bool().float()
+
+                # MASKED IMAGES
+                masked_image = masks.unsqueeze(1).repeat(1, 3, 1, 1) * input['image']
                 
+                # TRY-EXCEPT
+                if masked_image.shape[0]==0:
+                    removed_index_list.append(input_index)
+                    continue
+
+                # MASK INDICES by VQ-CLIP
+                mask_indices = vq_clip.quantize(masked_image, device)
+
                 # LBK visualization
                 # img = input['image'].permute(1,2,0).cpu().numpy()
                 # m = masks[2]
                 # s = small_masks[0]
                 
                 # Random shuffling
-                rand_int = torch.randperm(small_masks.shape[0])[:fix_num]
+                rand_int = torch.randperm(masked_image.shape[0])[:fix_num]
 
                 # Making cullavo prompt
                 for r_int in rand_int:
-                    if small_masks[r_int].sum()==0: continue
+                    if masks[r_int].sum()==0: continue
                     cls = classes[r_int]
                     box = boxes.tensor[r_int]
-                    seq = self.mask2seq(small_masks[r_int])
+                    seg = mask_indices[r_int]
                     txt = texts[r_int]
                     
 
                     # Rolling dice 
                     rolling_dice = torch.randint(high=3, low=0, size=(1,)).item()
                     if rolling_dice==0:
+                        # [OPT1] TXT -> SEG
                         cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                         cullavo_label=cullavo_label, 
-                                                                                        prompt=f"USER: can you get image patch labels of object for the given bounding box coordinate {box.tolist()} and text '{txt}'?\nAnswer image patch labels only ASSISTANT:", 
-                                                                                        answer=seq.tolist(), 
+                                                                                        prompt=f"USER: provide segmentation output of object that text '{txt}' represents. ASSISTANT:", 
+                                                                                        answer=self.seg2string(seg), 
                                                                                         processor=processor,
                                                                                         device=device, 
                                                                                         ignore_index=self.config.ignore_index)
                     elif rolling_dice==1:
+                        # [OPT2] TXT -> BOX
                         cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                         cullavo_label=cullavo_label, 
-                                                                                        prompt=f"USER: can you describe the object for image patch labels {seq.tolist()}?\nAnswer the question in brief ASSISTANT:", 
-                                                                                        answer=txt, 
+                                                                                        prompt=f"USER: provide bounding box coordinate describing text '{txt}'. ASSISTANT:", 
+                                                                                        answer=self.box2string(box), 
                                                                                         processor=processor,
                                                                                         device=device, 
                                                                                         ignore_index=self.config.ignore_index)
                     elif rolling_dice==2:
+                        # [OPT3] SEG -> TXT
                         cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                         cullavo_label=cullavo_label, 
-                                                                                        prompt=f"USER: do you know the class name of object for bounding box coordinate {box.tolist()} and text '{txt}'?\nAnswer class name only ASSISTANT:", 
-                                                                                        answer=cls, 
+                                                                                        prompt=f"USER: provide the name of object for segmentation output {self.seg2string(seg)}. ASSISTANT:", 
+                                                                                        answer=txt, 
                                                                                         processor=processor,
                                                                                         device=device, 
                                                                                         ignore_index=self.config.ignore_index)
@@ -455,7 +384,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             
         '''For Final Outputs'''
         cullavo_inputs = \
-        processor(text=batched_cullavo_prompt, images=torch.stack([input['image'] for input in inputs]), padding=True, return_tensors="pt")
+        processor(text=batched_cullavo_prompt, images=torch.stack([input['image'] for input_index, input in enumerate(inputs) if input_index not in removed_index_list]), padding=True, return_tensors="pt")
         
         # [1] input_ids
         input_ids = cullavo_inputs.input_ids.to(device)
@@ -485,22 +414,22 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         
 
     def forward(
-        self,
-        input_ids: torch.LongTensor = None,
-        pixel_values: torch.FloatTensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[List[torch.FloatTensor]] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        vision_feature_layer: Optional[int] = None,
-        vision_feature_select_strategy: Optional[str] = None,
-        labels: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-    ) -> Union[Tuple, CullavoCausalLMOutputWithPast]:
-
+            self,
+            input_ids: torch.LongTensor = None,
+            pixel_values: torch.FloatTensor = None,
+            attention_mask: Optional[torch.Tensor] = None,
+            position_ids: Optional[torch.LongTensor] = None,
+            past_key_values: Optional[List[torch.FloatTensor]] = None,
+            inputs_embeds: Optional[torch.FloatTensor] = None,
+            vision_feature_layer: Optional[int] = None,
+            vision_feature_select_strategy: Optional[str] = None,
+            labels: Optional[torch.LongTensor] = None,
+            use_cache: Optional[bool] = None,
+            output_attentions: Optional[bool] = None,
+            output_hidden_states: Optional[bool] = None,
+            return_dict: Optional[bool] = None,
+        ) -> Union[Tuple, CullavoCausalLMOutputWithPast]:
+            
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -514,6 +443,9 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             if vision_feature_select_strategy is not None
             else self.config.vision_feature_select_strategy
         )
+
+        # CuLLaVO
+        self.vision_tower.eval()
 
         if inputs_embeds is None:
             # 1. Extra the input embeddings
@@ -535,8 +467,8 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                     )
 
                 image_features = self.multi_modal_projector(selected_image_feature)
-                inputs_embeds, attention_mask, position_ids = self._merge_input_ids_with_image_features(
-                    image_features, inputs_embeds, input_ids, attention_mask, position_ids
+                inputs_embeds, attention_mask, _, position_ids = self._merge_input_ids_with_image_features(
+                    image_features, inputs_embeds, input_ids, attention_mask, labels
                 )
                 if labels is None:
                     labels = torch.full_like(attention_mask, self.config.ignore_index).to(torch.long)
@@ -546,8 +478,11 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 if past_key_values is not None and pixel_values is not None and input_ids.shape[1] == 1:
                     # Retrieve the first layer to inspect the logits and mask out the hidden states
                     # that are set to 0
-                    first_layer_past_key_value = past_key_values[0][0][:, 0, :, 0]
-                    batch_index, non_attended_tokens = torch.where(first_layer_past_key_value == 0)
+                    first_layer_past_key_value = past_key_values[0][0][:, :, :, 0]
+
+                    # Sum all dimensions of head_dim (-2) to avoid random errors such as: https://github.com/huggingface/transformers/pull/28032#issuecomment-1863691941
+                    batch_index, non_attended_tokens = torch.where(first_layer_past_key_value.float().sum(-2) == 0)
+
                     # Get the target length
                     target_seqlen = first_layer_past_key_value.shape[-1] + 1
 
@@ -557,11 +492,15 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                         device=attention_mask.device,
                     )
 
-                    # TODO and FIXME The part of LBK Overload!
+                    # Filter out only the tokens that can be un-attended, this can happen
+                    # if one uses Llava + Fused modules where the cache on the
+                    # first iteration is already big enough, or if one passes custom cache
+                    valid_indices = non_attended_tokens < extended_attention_mask.size(-1)
+                    new_batch_index = batch_index[valid_indices]
+                    new_non_attended_tokens = non_attended_tokens[valid_indices]
+
                     # Zero-out the places where we don't need to attend
-                    for a, b in zip(batch_index, non_attended_tokens):
-                        if 0<=a<extended_attention_mask.shape[0] and 0<=b<extended_attention_mask.shape[1]:
-                            extended_attention_mask[a, b] = 0
+                    extended_attention_mask[new_batch_index, new_non_attended_tokens] = 0
 
                     attention_mask = torch.cat((attention_mask, extended_attention_mask), dim=1)
                     position_ids = torch.sum(attention_mask, dim=1).unsqueeze(-1) - 1

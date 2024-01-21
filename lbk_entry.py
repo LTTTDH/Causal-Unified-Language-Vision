@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings('ignore', category=UserWarning, message='TypedStorage is deprecated')
+
 from utils.arguments import load_opt_command
 
 def main(args=None):

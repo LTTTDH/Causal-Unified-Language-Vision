@@ -69,7 +69,7 @@ class CuLLaVOPipeline:
                 
             # temp solution for lr scheduler
             steps_total = len(self.train_loader)
-            steps_acc = self._opt['LLM']['GRAD_CUM']
+            steps_acc = self._opt['OPTIMIZER']['GRAD_CUM']
             steps_update = steps_total // steps_acc
             self._opt["LR_SCHEDULER_PARAMS"]["steps_update_per_epoch"] = steps_update
         return dataloader
@@ -91,6 +91,8 @@ class CuLLaVOPipeline:
         sample_size_info = {'num_samples': len(batch)}
         loss = sum(loss for loss in loss.values())
         trainer.backward_loss(loss)
+        if trainer.accel.sync_gradients:
+            trainer.accel.clip_grad_norm_(trainer.model.parameters(), self._opt['OPTIMIZER']['GRAD_MAX'])
         trainer.update_model()
         return loss_info, sample_size_info, extra_info
 

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class DistributedTrainer:
     def __init__(self, opt):
         self.opt = opt
-        self.accel = Accelerator(gradient_accumulation_steps=self.opt['LLM']['GRAD_CUM']) # Accelerator
+        self.accel = Accelerator(gradient_accumulation_steps=self.opt['OPTIMIZER']['GRAD_CUM']) # Accelerator
         
         # parse environment information for distributed training
         self.opt['world_size'] = torch.distributed.get_world_size()

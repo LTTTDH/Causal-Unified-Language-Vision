@@ -328,8 +328,6 @@ def build_eval_dataloader(cfg, ):
             mapper = ScanNetSegDatasetMapper(cfg, False)
         elif dataset_name in ["scannet_21_panoptic_val", 'bdd10k_40_panoptic_val']:
             mapper = ScanNetPanoDatasetMapper(cfg, False)
-        elif "pascalvoc_val" in dataset_name:
-            mapper = PascalVOCSegDatasetMapperIX(cfg, False, dataset_name)
         elif 'sun' in dataset_name:
             mapper = SunRGBDSegDatasetMapper(cfg, False)
         elif 'refcoco' in dataset_name:
@@ -379,9 +377,6 @@ def build_train_dataloader(cfg, ):
             loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         elif mapper_name == "refcoco":
             mapper = RefCOCODatasetMapper(cfg, True)
-            loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
-        elif mapper_name == "coco_interactive":
-            mapper = COCOPanopticInteractiveDatasetMapper(cfg, True)
             loaders = build_detection_train_loader(cfg, dataset_name=dataset_name, mapper=mapper)
         elif mapper_name == "instruction_train":
             mapper = InstructionDatasetMapper(cfg, True, dataset_name)

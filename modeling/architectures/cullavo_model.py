@@ -62,9 +62,7 @@ class CuLLaVO(nn.Module):
         #     a[torch.where(batched_inputs[0]['instances'].gt_masks[i].float() == 1)] = 128
         
         if self.training:
-            if not self.cullavo_model:
-                return self.forward_vqclip(batched_inputs, accel)
-
+            if not self.cullavo_model: return self.forward_vqclip(batched_inputs, accel)
             return self.forward_seg_with_cullavo(batched_inputs, accel)
         else:
             if mode == 'retrieval':
@@ -87,38 +85,31 @@ class CuLLaVO(nn.Module):
     # CuLLaVO
     def forward_seg_with_cullavo(self, batched_inputs, accel):
         # CuLLaVO: llm preparation
-        cullavo_inputs = self.cullavo_model.train_process(batched_inputs, self.cullavo_processor, accel.device)
+        cullavo_inputs = self.cullavo_model.train_process(batched_inputs, self.cullavo_processor, self.vq_clip, accel.device)
         cullavo_outputs = self.cullavo_model(**cullavo_inputs)
         return {'loss_llm': cullavo_outputs.loss}
 
     def evaluate_with_llm(self, batched_inputs, accel):
-        images = [x["image"].to(self.device) for x in batched_inputs]
-        images = [(x - self.pixel_mean) / self.pixel_std for x in images]
-        
-        images = ImageList.from_tensors(images, self.size_divisibility)
 
-
-        a = F.interpolate(torch.stack([x['image'] for x in batched_inputs]), size=(336,336))
-        new_batched_inputs = [{'image': aa} for aa in a]
-        b = a[0].permute(1,2,0).cpu().numpy()
+        interpolated_images = F.interpolate(torch.stack([x['image'] for x in batched_inputs]), size=(336,336))
 
         # CuLLaVO: llm preparation
-        # cullavo_inputs = self.cullavo_model.eval_process(batched_inputs, processor=self.cullavo_processor, device=accel.device)
-        cullavo_inputs = self.cullavo_model.custom_process(new_batched_inputs, prompt="An image is evenly divided into the 576 number of patches. The patches is labeled from 1 to 576 in a sequential manner. "
-                                                           "Starting from the top-left corner, we assign the patches to labels row-wise, moving from left to right, and then proceeding to the next row until the entire image is covered. "
-                                                           "USER: what is the object name for label sets (5,6,7,8,9,10).\nAnswer the object name only ASSISTANT:", processor=self.cullavo_processor, device=accel.device)
+        cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
+                                                         prompt="can you show segmentation index of person?\nAnswer segmentation index", 
+                                                         processor=self.cullavo_processor, 
+                                                         device=accel.device)
         with torch.inference_mode():
-            generate_ids = self.cullavo_model.generate(**{k:v.to(accel.device) for k,v in cullavo_inputs.items()}, do_sample=False, temperature=0, max_new_tokens=200, use_cache=True)
+            generate_ids = self.cullavo_model.generate(**cullavo_inputs, do_sample=False, temperature=0, max_new_tokens=100, num_beams=5, no_repeat_ngram_size=2, use_cache=True)
         decoded_text = self.cullavo_processor.batch_decode(generate_ids)[0]
 
         # BOX visualizer
         from detectron2.utils.visualizer import Visualizer
-        img = batched_inputs[0]['image'].permute(1,2,0).cpu().numpy()
-        vis = Visualizer(new_batched_inputs[0]['image'].permute(1,2,0).cpu().numpy())
-        out = vis.draw_box(torch.tensor([0.75, 0.55, 0.9, 0.72])*336).get_image()
+        img = interpolated_images[0].permute(1,2,0).cpu().numpy()
+        vis = Visualizer(img)
+        out = vis.draw_box(torch.tensor([0.6, 0.41, 0.7, 0.62])*336).get_image()
         
 
-        #  CuLLaVO 
+        # CuLLaVO 
         # mask_cls_results = res_outputs["pred_logits"]
         # mask_pred_results = res_outputs["pred_masks"]
         # box_pred_results = [None for _ in range(len(mask_pred_results))]
