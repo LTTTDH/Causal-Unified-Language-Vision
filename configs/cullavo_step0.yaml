@@ -18,7 +18,7 @@ OPTIMIZER:
   PERIOD: 2 # Save Period
   WEIGHT_DECAY: 0 # Weight Decay
   EPOCH: 2 # epoch
-  GRAD_MAX: 1
+  GRAD_MAX: 10
   GRAD_CUM: 1 # Gradient Accumulation
 
 # VQ-CLIP
