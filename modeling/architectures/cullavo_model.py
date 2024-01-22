@@ -1,13 +1,12 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-from detectron2.structures import ImageList
 
 from .build import register_model
 from ..utils import configurable
 
 # CuLLaVO
-from cullavo.load_cullavo import prepare_cullavo
+from cullavo.load_cullavo import prepare_cullavo, add_adapter_step2, set_all_adapter
 from cullavo.utils.load_vqclip import prepare_clip
 
 class CuLLaVO(nn.Module):
@@ -16,11 +15,13 @@ class CuLLaVO(nn.Module):
     def __init__(
         self,
         *,
+        cfg,
         cullavo_model, # CuLLaVO
         cullavo_processor, # CuLLaVO
         vq_clip,
     ):
         super().__init__()
+        self.cfg = cfg
         self.cullavo_model = cullavo_model # CuLLaVO
         self.cullavo_processor = cullavo_processor # CuLLaVO
         self.vq_clip = vq_clip
@@ -39,11 +40,13 @@ class CuLLaVO(nn.Module):
             cullavo_model, cullavo_processor = prepare_cullavo(bits=cfg['LLM']['BITS'],
                                                                grad_ckpt=cfg['LLM']['GRAD_CKPT'],
                                                                lora=cfg['LLM']['LORA'])
+            # CuLLaVO
+            if cfg['NAME'] == 'cullavo_step2': add_adapter_step2(cullavo_model)
         else:
             cullavo_model, cullavo_processor = None, None
 
-
         return {
+            "cfg": cfg,
             "cullavo_model": cullavo_model, # CuLLaVO
             "cullavo_processor": cullavo_processor, # CuLLaVO
             "vq_clip": vq_clip,
@@ -54,16 +57,13 @@ class CuLLaVO(nn.Module):
         return self.pixel_mean.device
 
     def forward(self, batched_inputs, accel, mode=None):
-
-        # a = batched_inputs[0]['image'].permute(1,2,0).cpu().numpy()
-        # b = batched_inputs[0]['instances'].gt_masks[0].unsqueeze(2).cpu().numpy()
-        # c = batched_inputs[0]['groundings']['masks'][0].unsqueeze(2).cpu().numpy()
-        # for i in range(batched_inputs[0]['instances'].gt_masks.shape[0]):
-        #     a[torch.where(batched_inputs[0]['instances'].gt_masks[i].float() == 1)] = 128
-        
         if self.training:
-            if not self.cullavo_model: return self.forward_vqclip(batched_inputs, accel)
-            return self.forward_seg_with_cullavo(batched_inputs, accel)
+            if self.cfg['NAME']=='cullavo_step0':
+                return self.forward_step0(batched_inputs, accel)
+            elif self.cfg['NAME']=='cullavo_step1':
+                return self.forward_step1(batched_inputs, accel)
+            elif self.cfg['NAME']=='cullavo_step2':
+                return self.forward_step2(batched_inputs, accel)
         else:
             if mode == 'retrieval':
                 return self.evaluate_retrieval(batched_inputs)
@@ -78,14 +78,21 @@ class CuLLaVO(nn.Module):
                 # return self.evaluate(batched_inputs)
                 return self.evaluate_with_llm(batched_inputs, accel)
 
-    # CuLLaVO
-    def forward_vqclip(self, batched_inputs, accel):
+    # VQ-CLIP - STEP0 - Vector Quantization for CLIP
+    def forward_step0(self, batched_inputs, accel):
         return {'loss_clip': self.vq_clip(batched_inputs, accel)[2]}
 
-    # CuLLaVO
-    def forward_seg_with_cullavo(self, batched_inputs, accel):
+    # CuLLaVO - STEP1 - Finetuning for Object Understanding
+    def forward_step1(self, batched_inputs, accel):
         # CuLLaVO: llm preparation
-        cullavo_inputs = self.cullavo_model.train_process(batched_inputs, self.cullavo_processor, self.vq_clip, accel.device)
+        cullavo_inputs = self.cullavo_model.step1_process(batched_inputs, self.cullavo_processor, self.vq_clip, accel.device)
+        cullavo_outputs = self.cullavo_model(**cullavo_inputs)
+        return {'loss_llm': cullavo_outputs.loss}
+    
+    # CuLLaVO - STEP2 - Finetuning for Instruction tuning based on Object Understanding
+    def forward_step2(self, batched_inputs, accel):
+        # CuLLaVO: llm preparation
+        cullavo_inputs = self.cullavo_model.step2_process(batched_inputs, self.cullavo_processor, self.vq_clip, accel.device)
         cullavo_outputs = self.cullavo_model(**cullavo_inputs)
         return {'loss_llm': cullavo_outputs.loss}
 

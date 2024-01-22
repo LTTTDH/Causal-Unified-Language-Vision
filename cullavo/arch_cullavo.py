@@ -126,7 +126,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         return {"input_ids": input_ids, "pixel_values": pixel_values, "attention_mask": attention_mask,}
 
 
-    def train_process(
+    def step1_process(
         self,
         inputs,
         processor,
@@ -430,7 +430,42 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             "output_attentions": output_attentions,\
             "output_hidden_states": output_hidden_states,\
             "return_dict": return_dict}
+    
+    def step2_process(batched_inputs, device):
+
+        # initialization
+        input_ids = None
+        pixel_values  = None
+        attention_mask = None
+        position_ids = None
+        past_key_values = None
+        inputs_embeds = None
+        vision_feature_layer = None
+        vision_feature_select_strategy = None
+        labels = None
+        use_cache = None
+        output_attentions = None
+        output_hidden_states = None
+        return_dict = None
+
+
+
         
+
+        return {"input_ids": input_ids,\
+            "pixel_values": pixel_values,\
+            "attention_mask": attention_mask,\
+            "position_ids": position_ids,\
+            "past_key_values": past_key_values,\
+            "inputs_embeds": inputs_embeds,\
+            "vision_feature_layer": vision_feature_layer,\
+            "vision_feature_select_strategy": vision_feature_select_strategy,\
+            "labels": labels,\
+            "use_cache": use_cache,\
+            "output_attentions": output_attentions,\
+            "output_hidden_states": output_hidden_states,\
+            "return_dict": return_dict}
+
 
     def forward(
             self,

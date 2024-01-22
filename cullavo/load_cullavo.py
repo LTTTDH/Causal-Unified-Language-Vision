@@ -18,6 +18,22 @@ def find_all_linear_names(model):
         lora_module_names.remove('lm_head')
     return list(lora_module_names)
 
+def set_all_adapter(cullavo_model):
+    cullavo_model.language_model.set_adapter(['step1', 'step2'])
+
+def add_adapter_step2(cullavo_model):
+    lora_config = LoraConfig(
+        r=64,
+        lora_alpha=16,
+        target_modules=find_all_linear_names(cullavo_model.language_model),
+        lora_dropout=0.05,
+        bias='none',
+        task_type="CAUSAL_LM",
+    )
+    cullavo_model.language_model.add_adapter(lora_config, adapter_name='step2')
+    cullavo_model.language_model.set_adapter("step2")
+
+
 def prepare_cullavo(bits, grad_ckpt, lora):
 
     bnb_model_from_pretrained_args = {}
@@ -57,6 +73,8 @@ def prepare_cullavo(bits, grad_ckpt, lora):
             task_type="CAUSAL_LM",
         )
         cullavo_model.language_model.add_adapter(lora_config, adapter_name='step1')
+        cullavo_model.language_model.set_adapter("step1")
+
     elif bits in [4, 8] and not lora:
         raise Exception("training model with non-lora bits quantization is not worked")
     elif not bits in [4, 8] and lora:
