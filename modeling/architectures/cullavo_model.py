@@ -95,11 +95,11 @@ class CuLLaVO(nn.Module):
 
         # CuLLaVO: llm preparation
         cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
-                                                         prompt="can you show segmentation index of person?\nAnswer segmentation index", 
+                                                         prompt="describe this image. ASSISTANT:", 
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
         with torch.inference_mode():
-            generate_ids = self.cullavo_model.generate(**cullavo_inputs, do_sample=False, temperature=0, max_new_tokens=100, num_beams=5, no_repeat_ngram_size=2, use_cache=True)
+            generate_ids = self.cullavo_model.generate(**cullavo_inputs, do_sample=False, temperature=0, max_new_tokens=200, num_beams=5, no_repeat_ngram_size=2, use_cache=True)
         decoded_text = self.cullavo_processor.batch_decode(generate_ids)[0]
 
         # BOX visualizer

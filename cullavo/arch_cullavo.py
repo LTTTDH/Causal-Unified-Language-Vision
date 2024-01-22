@@ -55,11 +55,11 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
 
     @staticmethod
     def seg2string(seg):
-        out = '[ '
+        out = '['
         for i, x in enumerate(seg):
-            out+=f"<{x}>"
+            out+=f"{x}"
             if i!=len(seg)-1: out+=', '
-        out+=' ]'
+        out+=']'
         return out
 
     @staticmethod
@@ -79,7 +79,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
     def make_and_add_prompt_and_label(cullavo_prompt, cullavo_label, prompt, answer, processor, device, ignore_index):
         
         # indent
-        prompt = " " + prompt
+        prompt = " USER: " + prompt + " ASSISTANT:"
 
         # Only Prompt Length
         length = processor.tokenizer(prompt, return_tensors='pt', add_special_tokens=False).input_ids[0].shape[0]
@@ -216,10 +216,15 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             rolling_dice = torch.randint(high=3, low=0, size=(1,)).item()
             if rolling_dice==0:
                 # [OPT1] IMG -> CLS
+                prompt = f"provide the class name of object in this image"
+                if len(unique_classes)==1:
+                    answer = f"Sure, there is one object in this image. Its class name is {self.classes2string(unique_classes)}."
+                else:
+                    answer = f"Sure, there are {len(unique_classes)} objects in this image. Their class names of multiple objects are {self.classes2string(unique_classes)}."
                 cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                 cullavo_label=cullavo_label, 
-                                                                                prompt=f"USER: provide the name of objects in this image. ASSISTANT:",
-                                                                                answer=self.classes2string(unique_classes),
+                                                                                prompt=prompt,
+                                                                                answer=answer,
                                                                                 processor=processor,
                                                                                 device=device,
                                                                                 ignore_index=self.config.ignore_index)
@@ -231,11 +236,16 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 selected_index = torch.where(class_ids==selected_class_id)
                 selected_boxes = boxes[selected_index]
 
+                prompt = f"provide bounding box coordinate of {selected_class} in this image"
+                if len(selected_boxes)==1:
+                    answer = f"Sure, there is one bounding box coordinate [x_min, y_min, x_max, y_max] for {selected_class} in this image. This bounding box coordinate of {selected_class} is {self.boxes2string(selected_boxes)}."
+                else:
+                    answer = f"Sure, there are {len(selected_boxes)} bounding box coordinates [x_min, y_min, x_max, y_max] for {selected_class} in this image. Multiple bounding box coordiantes of {selected_class} is {self.boxes2string(selected_boxes)}."
                 # [OPT2] CLS -> BOX
                 cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                 cullavo_label=cullavo_label, 
-                                                                                prompt=f"USER: provide bounding box coordinate of {selected_class} in this image. ASSISTANT:",
-                                                                                answer=self.boxes2string(selected_boxes),
+                                                                                prompt=prompt,
+                                                                                answer=answer,
                                                                                 processor=processor,
                                                                                 device=device,
                                                                                 ignore_index=self.config.ignore_index)
@@ -247,11 +257,19 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 selected_index = torch.where(class_ids==selected_class_id)
                 selected_segs = mask_indices[selected_index]
 
+                prompt = f"provide segmentation token sequence of {selected_class} in this image."
+                answer = f"{self.segs2string(selected_segs)}"
+
+                if len(selected_segs)==1:
+                    answer = f"Sure, there is one segmentation token sequence having 49 number of integer numbers from 0 to 63 for {selected_class} in this image. This segmentation token index is {self.segs2string(selected_segs)}."
+                else:
+                    answer = f"Sure, there are {len(selected_segs)} segmentation token sequences having 49 number of integer numbers from 0 to 63 for {selected_class} in this image. Multiple segmentation token indexes are {self.segs2string(selected_segs)}."
+
                 # [OPT3] CLS -> SEG
                 cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                 cullavo_label=cullavo_label, 
-                                                                                prompt=f"USER: provide segmentation output of {selected_class} in this image. ASSISTANT:",
-                                                                                answer=self.segs2string(selected_segs),
+                                                                                prompt=prompt,
+                                                                                answer=answer,
                                                                                 processor=processor,
                                                                                 device=device,
                                                                                 ignore_index=self.config.ignore_index)
@@ -271,30 +289,36 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 # Rolling dice 
                 rolling_dice = torch.randint(high=3, low=0, size=(1,)).item()
                 if rolling_dice==0:
+                    prompt = f"provide bounding box coordinate of object corresponding to segmentation token sequence {self.seg2string(seg)}."
+                    answer = f"Sure, segmentation token sequence having 49 number of integer numbers from 0 to 63 {self.seg2string(seg)} corresponds to bounding box coordinate [x_min, y_min, x_max, y_max] of object {self.box2string(box)}."
                     # [OPT1] SEG -> BOX
                     cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
-                                                                                    prompt=f"USER: provide bounding box coordinate of object for segmentation output {self.seg2string(seg)}. ASSISTANT:",
-                                                                                    answer=self.box2string(box),
+                                                                                    prompt=prompt,
+                                                                                    answer=answer,
                                                                                     processor=processor,
                                                                                     device=device,
                                                                                     ignore_index=self.config.ignore_index)
 
                 elif rolling_dice==1:
+                    prompt = f"provide the class name of the object that segmentation token sequence {self.seg2string(seg)} represents."
+                    answer = f"Sure, segmentation token sequence having 49 number of integer numbers from 0 to 63 {self.seg2string(seg)} represents {cls}."
                     # [OPT2] SEG -> CLS
                     cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
-                                                                                    prompt=f"USER: provide the name of the object that segmentation output {self.seg2string(seg)} represents. ASSISTANT:", 
-                                                                                    answer=cls, 
+                                                                                    prompt=prompt, 
+                                                                                    answer=answer, 
                                                                                     processor=processor,
                                                                                     device=device,
                                                                                     ignore_index=self.config.ignore_index)
                 elif rolling_dice==2:
+                    prompt = f"provide segmentation token sequence of object corresponding to bounding box coordinate {self.box2string(box)} and the name of object {cls}."
+                    answer = f"Sure, [x_min, y_min, x_max, y_max] bounding box coordinate {self.box2string(box)} and the name of object {cls} corresponds to segmentation token sequence having 49 number of integer numbers from 0 to 63 {self.seg2string(seg)}."
                     # [OPT3] BOX, CLASS -> SEG
                     cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
-                                                                                    prompt=f"USER: provide segmentation output of object for bounding box coordinate {self.box2string(box)} and the name of object {cls}. ASSISTANT:", 
-                                                                                    answer=self.seg2string(seg), 
+                                                                                    prompt=prompt, 
+                                                                                    answer=answer, 
                                                                                     processor=processor,
                                                                                     device=device,
                                                                                     ignore_index=self.config.ignore_index)
@@ -347,31 +371,26 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                     
 
                     # Rolling dice 
-                    rolling_dice = torch.randint(high=3, low=0, size=(1,)).item()
+                    rolling_dice = torch.randint(high=2, low=0, size=(1,)).item()
                     if rolling_dice==0:
+                        prompt = f"provide segmentation token sequence of object that the referring text represents: '{txt}'"
+                        answer = f"Sure, the referring text '{txt}' represents segmentation token sequence having 49 number of integer numbers from 0 to 63 {self.seg2string(seg)}."
                         # [OPT1] TXT -> SEG
                         cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                         cullavo_label=cullavo_label, 
-                                                                                        prompt=f"USER: provide segmentation output of object that text '{txt}' represents. ASSISTANT:", 
-                                                                                        answer=self.seg2string(seg), 
+                                                                                        prompt=prompt, 
+                                                                                        answer=answer, 
                                                                                         processor=processor,
                                                                                         device=device, 
                                                                                         ignore_index=self.config.ignore_index)
                     elif rolling_dice==1:
+                        prompt = f"provide bounding box coordinate describing the referring text: '{txt}'"
+                        answer = f"Sure, the referring text '{txt}' represents [x_min, y_min, x_max, y_max] bounding box coordinate {self.box2string(box)}"
                         # [OPT2] TXT -> BOX
                         cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                         cullavo_label=cullavo_label, 
-                                                                                        prompt=f"USER: provide bounding box coordinate describing text '{txt}'. ASSISTANT:", 
-                                                                                        answer=self.box2string(box), 
-                                                                                        processor=processor,
-                                                                                        device=device, 
-                                                                                        ignore_index=self.config.ignore_index)
-                    elif rolling_dice==2:
-                        # [OPT3] SEG -> TXT
-                        cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
-                                                                                        cullavo_label=cullavo_label, 
-                                                                                        prompt=f"USER: provide the name of object for segmentation output {self.seg2string(seg)}. ASSISTANT:", 
-                                                                                        answer=txt, 
+                                                                                        prompt=prompt, 
+                                                                                        answer=answer, 
                                                                                         processor=processor,
                                                                                         device=device, 
                                                                                         ignore_index=self.config.ignore_index)

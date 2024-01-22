@@ -52,26 +52,12 @@ class BaseModel(nn.Module):
                 multi_modal_projector_state_dict.update({name: param.detach().cpu().clone()})
             if accel.is_main_process: torch.save(multi_modal_projector_state_dict, os.path.join(llm_path, "multi_modal_projector.pt"))
 
-            # LM head save
-            lm_head_state_dict = {}
-            for name, param in accel.unwrap_model(self.model.cullavo_model.language_model.lm_head).named_parameters():
-                lm_head_state_dict.update({name: param.detach().cpu().clone()})
-            if accel.is_main_process: torch.save(lm_head_state_dict, os.path.join(llm_path, "lm_head.pt"))
-
-            # Word embedding save
-            embed_tokens_state_dict = {}
-            for name, param in accel.unwrap_model(self.model.cullavo_model.get_input_embeddings()).named_parameters():
-                embed_tokens_state_dict.update({name: param.detach().cpu().clone()})
-            if accel.is_main_process: torch.save(embed_tokens_state_dict, os.path.join(llm_path, "embed_tokens.pt"))
-
             # Token parallel
             os.environ['TOKENIZERS_PARALLELISM']='true'
 
         # VQ-CLIP save
         if self.opt['VQCLIP']['LOAD_VQCLIP']:
             if accel.is_main_process: torch.save(self.model.vq_clip.state_dict(), os.path.join(save_dir, f'epoch{epoch}', f"vq_clip.pt"))
-
-
 
     def from_pretrained(self, load_dir, accel):
         if os.path.exists(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo')):
@@ -80,7 +66,6 @@ class BaseModel(nn.Module):
             del self.model.cullavo_model
             del self.model.cullavo_processor
             torch.cuda.empty_cache()
-
 
             # Reallocation 
             bits = 4 # TODO: peft config extraction
@@ -108,9 +93,6 @@ class BaseModel(nn.Module):
             self.model.cullavo_model = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, **bnb_model_from_pretrained_args)
             self.model.cullavo_model.language_model.load_adapter(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo'))
             self.model.cullavo_processor = AutoProcessor.from_pretrained(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo'), padding_side="right")
-            
-            # Resize Word Embedding
-            self.model.cullavo_model.resize_token_embeddings(len(self.model.cullavo_processor.tokenizer))
 
             # LORA -> bfloat16 conversion 
             for param in self.model.cullavo_model.parameters():
@@ -121,27 +103,23 @@ class BaseModel(nn.Module):
             multi_modal_projector_state_dict = torch.load(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', "multi_modal_projector.pt"), map_location=accel.device)
             self.model.cullavo_model.multi_modal_projector.load_state_dict(multi_modal_projector_state_dict)
 
-            # torch load for lm head
-            lm_head_state_dict = torch.load(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', "lm_head.pt"), map_location=accel.device)
-            self.model.cullavo_model.language_model.lm_head.load_state_dict(lm_head_state_dict)
-
-            # torch load for word embedding
-            embed_tokens_state_dict = torch.load(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', "embed_tokens.pt"), map_location=accel.device)
-            self.model.cullavo_model.get_input_embeddings().load_state_dict(embed_tokens_state_dict)
-
             # Freeze Parameter for Evaluating
             self.model.cullavo_model = self.model.cullavo_model.eval()
             for param in self.model.cullavo_model.parameters(): param.requires_grad_(False)
+
+            # Verbose
             if accel.is_main_process: print(f'CuLLaVO Loaded!!: {load_dir}')
         else:
+            # Verbose
             if accel.is_main_process: print(f'There is no CuLLaVO pretrained: {load_dir}')
 
         # VQ CLIP
         if self.opt['VQCLIP']['LOAD_VQCLIP']:
             self.model.vq_clip.load_state_dict(torch.load(os.path.join("/".join(load_dir.split('/')[:-1]), f"vq_clip.pt"), map_location=accel.device))
-            if accel.is_main_process: print(f'VQ-CLIP Loaded!!: {load_dir}')
             self.model.vq_clip = self.model.vq_clip.eval()
             for param in self.model.vq_clip.parameters(): param.requires_grad_(False)
+            # Verbose
+            if accel.is_main_process: print(f'VQ-CLIP Loaded!!: {load_dir}')
         else:
             if accel.is_main_process: print(f'There is no VQ-CLIP file: {load_dir}')
 

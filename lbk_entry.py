@@ -9,7 +9,7 @@ def main(args=None):
     from trainer import CuLLaVO_Trainer as Trainer
     trainer = Trainer(opt)
     
-    if trainer.opt['NAME'] == 'cullavo_step1.yaml':
+    if 'cullavo_step' in trainer.opt['NAME']:
         if cmdline_args.command == 'train':
             trainer.train() # CuLLaVO
         elif cmdline_args.command == 'eval':

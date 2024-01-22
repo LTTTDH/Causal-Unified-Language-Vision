@@ -3,6 +3,7 @@ import torch
 from .utils.utils import LLAVA_LOCAL_PATH
 from .arch_cullavo import CuLLaVOModel
 from transformers import AutoProcessor
+from peft import LoraConfig
 from peft import prepare_model_for_kbit_training
 
 def find_all_linear_names(model):
@@ -30,7 +31,7 @@ def prepare_cullavo(bits, grad_ckpt, lora):
             quantization_config=BitsAndBytesConfig(
                 load_in_4bit=bits == 4,
                 load_in_8bit=bits == 8,
-                llm_int8_skip_modules=["vision_tower", "multi_modal_projector", "lm_head"],
+                llm_int8_skip_modules=["vision_tower", "multi_modal_projector", "lm_head"], # LM_HEAD: flash attention
                 llm_int8_threshold=6.0,
                 llm_int8_has_fp16_weight=False,
                 bnb_4bit_compute_dtype=torch.bfloat16,
@@ -47,8 +48,6 @@ def prepare_cullavo(bits, grad_ckpt, lora):
         cullavo_model = prepare_model_for_kbit_training(cullavo_model,
                                                         use_gradient_checkpointing=grad_ckpt,
                                                         gradient_checkpointing_kwargs={"use_reentrant": False})
-        
-        from peft import LoraConfig, get_peft_model
         lora_config = LoraConfig(
             r=64,
             lora_alpha=16,
@@ -57,7 +56,7 @@ def prepare_cullavo(bits, grad_ckpt, lora):
             bias='none',
             task_type="CAUSAL_LM",
         )
-        cullavo_model.language_model = get_peft_model(cullavo_model.language_model, lora_config)
+        cullavo_model.language_model.add_adapter(lora_config, adapter_name='step1')
     elif bits in [4, 8] and not lora:
         raise Exception("training model with non-lora bits quantization is not worked")
     elif not bits in [4, 8] and lora:
@@ -67,36 +66,18 @@ def prepare_cullavo(bits, grad_ckpt, lora):
     else:
         raise Exception("WTF")
 
-    # Bfloat16  
-    if bits in [4, 8]:
-        for name, param in cullavo_model.named_parameters():
-            if 'lora' in name:
-                param.data = param.data.to(torch.bfloat16)
-            elif 'norm' in name:
-                param.data = param.data.to(torch.bfloat16)
-            else:
-                param.data = param.data.to(torch.bfloat16)
+    # bfloat16 conversion 
+    for param in cullavo_model.parameters():
+        if 'float32' in str(param.dtype).lower():
+            param.data = param.data.to(torch.bfloat16)
             
     # Training Linear Connection
     for param in cullavo_model.multi_modal_projector.parameters():
         param.requires_grad_(True)
-
-    # Training LM Head
-    for param in cullavo_model.language_model.lm_head.parameters():
-        param.requires_grad_(True)
     
     # Add tokens to tokenzier for CuLLaVO
     cullavo_processor = AutoProcessor.from_pretrained(LLAVA_LOCAL_PATH, padding_side='right')
-    for i in range(64):
-        cullavo_processor.tokenizer.add_tokens(f'<{i}>', special_tokens=False)
-    
-    # Resize Word Embedding
-    cullavo_model.resize_token_embeddings(len(cullavo_processor.tokenizer))
 
-    # Training Word Embed
-    for param in cullavo_model.get_input_embeddings().parameters():
-        param.requires_grad_(True)
-    
     return cullavo_model, cullavo_processor
 
 # for name, param in cullavo_model.named_parameters(): print(f"{name}: {param.dtype} {param.requires_grad}")
