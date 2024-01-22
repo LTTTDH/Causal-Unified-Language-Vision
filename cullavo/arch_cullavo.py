@@ -430,8 +430,41 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             "output_attentions": output_attentions,\
             "output_hidden_states": output_hidden_states,\
             "return_dict": return_dict}
-    
-    def step2_process(batched_inputs, device):
+
+    def step2_preprocess(self, 
+                        batched_inputs, 
+                        processor, 
+                        device):
+
+        images_list = []
+        for batch in batched_inputs:
+            # image append
+            images_list.append(batch['image'])
+                        
+            # make prompt and answer
+            new_json_list = []
+            for k in range(len(batch['question'])//2):
+
+                cullavo_inputs = self.eval_process(images=batch['image'], 
+                                                    prompt=batch['question'][2*k]['value'] if k!=0 else batch['question'][2*k]['value'].replace('<image>', '').strip(), 
+                                                    processor=processor, 
+                                                    device=device)
+                    
+                # CuLLaVO: llm preparation for Generation
+                self.language_model.set_adapter(["step1"])
+                with torch.inference_mode():
+                    generate_ids = self.generate(**cullavo_inputs, do_sample=False, temperature=0, max_new_tokens=30, use_cache=True)
+                decoded_text = processor.batch_decode(generate_ids, skip_special_tokens=True)[0].split('ASSISTANT:')[-1].strip()
+
+            # making new json for CuLLaVO Dataset
+            new_json_list.append({'id': batch['question_id'], 'image': batch['image_id'], 'conversations': batch['questions']})
+
+        return new_json_list
+
+    def step2_process(self, 
+                      batched_inputs, 
+                      processor, 
+                      device):
 
         # initialization
         input_ids = None
@@ -448,9 +481,67 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         output_hidden_states = None
         return_dict = None
 
+        # IMAGE/QUESTION/ANSWER PREPROCESS
+        images_list = []
+        batched_cullavo_prompt = []
+        batched_cullavo_label = []
+        for batch in batched_inputs:
+            # image append
+            images_list.append(batch['image'])
+            
+            # cullavo prompt prefix
+            cullavo_prompt, cullavo_label = self.make_system_prompt(processor, device, self.config.ignore_index)
+            
+            # Drawing BBox & Seg
+            # from detectron2.utils.visualizer import Visualizer
+            # img = batch['image'].permute(1,2,0).cpu().numpy()
+            # vis = Visualizer(batch['image']['image'].permute(1,2,0).cpu().numpy())
+            # out = vis.draw_box(torch.tensor([0.391, 0.478, 0.885, 0.987])*1024).get_image()
+
+            # CuLLaVO: llm preparation for Generation
+            # cullavo_inputs = self.eval_process(images=batch['image'], 
+            #                                     prompt="provide the name of objects in this image", 
+            #                                     processor=processor, 
+            #                                     device=device)
+            
+            # # self.language_model.set_adapter(["step1","step2"])
+            # self.language_model.disable_adapters()
+            # with torch.inference_mode():
+            #     generate_ids = self.generate(**cullavo_inputs, do_sample=False, temperature=0, max_new_tokens=30, use_cache=True)
+            # decoded_text = processor.batch_decode(generate_ids)[0]
 
 
+            # make prompt and answer
+            for k in range(len(batch['question'])//2):
+                cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                                                                cullavo_label=cullavo_label, 
+                                                                prompt=batch['question'][2*k]['value'] if k!=0 else batch['question'][2*k]['value'].replace('<image>').strip(),
+                                                                answer=batch['question'][2*k+1]['value'],
+                                                                processor=processor,
+                                                                device=device,
+                                                                ignore_index=self.config.ignore_index)
+                
+            # making batched cullavo prompt
+            batched_cullavo_prompt.append(cullavo_prompt)
+            batched_cullavo_label.append(cullavo_label)
+
+
+        '''For Final Outputs'''
+        cullavo_inputs = \
+        processor(text=batched_cullavo_prompt, images=torch.stack(images_list), padding=True, return_tensors="pt")
         
+        # [1] input_ids
+        input_ids = cullavo_inputs.input_ids.to(device)
+        
+        # [2] pixel values
+        pixel_values = cullavo_inputs.pixel_values.to(device)
+        
+        # [3] attention_mask
+        attention_mask = cullavo_inputs.attention_mask.to(device)
+                
+        # [4] labels
+        labels = torch.nn.utils.rnn.pad_sequence(batched_cullavo_label, batch_first=True, padding_value=self.config.ignore_index)
+
 
         return {"input_ids": input_ids,\
             "pixel_values": pixel_values,\

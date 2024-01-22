@@ -41,7 +41,7 @@ class CuLLaVO(nn.Module):
                                                                grad_ckpt=cfg['LLM']['GRAD_CKPT'],
                                                                lora=cfg['LLM']['LORA'])
             # CuLLaVO
-            if cfg['NAME'] == 'cullavo_step2': add_adapter_step2(cullavo_model)
+            if cfg['NAME'] == 'cullavo_step2.yaml': add_adapter_step2(cullavo_model)
         else:
             cullavo_model, cullavo_processor = None, None
 
@@ -58,25 +58,17 @@ class CuLLaVO(nn.Module):
 
     def forward(self, batched_inputs, accel, mode=None):
         if self.training:
-            if self.cfg['NAME']=='cullavo_step0':
+            if self.cfg['NAME']=='cullavo_step0s.yaml':
                 return self.forward_step0(batched_inputs, accel)
-            elif self.cfg['NAME']=='cullavo_step1':
+            elif self.cfg['NAME']=='cullavo_step1.yaml':
                 return self.forward_step1(batched_inputs, accel)
-            elif self.cfg['NAME']=='cullavo_step2':
+            elif self.cfg['NAME']=='cullavo_step2.yaml':
                 return self.forward_step2(batched_inputs, accel)
         else:
-            if mode == 'retrieval':
-                return self.evaluate_retrieval(batched_inputs)
-            elif mode == 'captioning':
-                return self.evaluate_captioning(batched_inputs)
-            elif mode == 'classification':
-                return self.evaluate_classification(batched_inputs)
-            elif mode == 'grounding_refcoco':
-                # return self.evaluate_grounding(batched_inputs)
-                return self.evaluate_grounding_with_llm(batched_inputs)
-            else:
-                # return self.evaluate(batched_inputs)
-                return self.evaluate_with_llm(batched_inputs, accel)
+            if self.cfg['NAME']=='cullavo_step2_pre.yaml':
+                return self.forward_step2_pre(batched_inputs, accel)
+            
+            return self.evaluate_with_llm(batched_inputs, accel)
 
     # VQ-CLIP - STEP0 - Vector Quantization for CLIP
     def forward_step0(self, batched_inputs, accel):
@@ -90,9 +82,15 @@ class CuLLaVO(nn.Module):
         return {'loss_llm': cullavo_outputs.loss}
     
     # CuLLaVO - STEP2 - Finetuning for Instruction tuning based on Object Understanding
+    def forward_step2_pre(self, batched_inputs, accel):
+        # CuLLaVO: llm preparation
+        new_json_list = self.cullavo_model.step2_preprocess(batched_inputs, self.cullavo_processor, accel.device)
+        return new_json_list
+
+    # CuLLaVO - STEP2 - Finetuning for Instruction tuning based on Object Understanding
     def forward_step2(self, batched_inputs, accel):
         # CuLLaVO: llm preparation
-        cullavo_inputs = self.cullavo_model.step2_process(batched_inputs, self.cullavo_processor, self.vq_clip, accel.device)
+        cullavo_inputs = self.cullavo_model.step2_process(batched_inputs, self.cullavo_processor, accel.device)
         cullavo_outputs = self.cullavo_model(**cullavo_inputs)
         return {'loss_llm': cullavo_outputs.loss}
 

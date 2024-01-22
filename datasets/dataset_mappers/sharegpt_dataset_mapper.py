@@ -115,7 +115,7 @@ class ShareGPTDatasetMapper:
             image = utils._apply_exif_orientation(image)
             image = utils.convert_PIL_to_numpy(image, self.img_format)
             utils.check_image_size(dataset_dict, image)
-            # image, transforms = T.apply_transform_gens(self.tfm_gens, image)
+            image, transforms = T.apply_transform_gens(self.tfm_gens, image)
 
             dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
         # else:

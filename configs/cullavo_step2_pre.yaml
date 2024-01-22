@@ -1,8 +1,8 @@
-NAME: cullavo_step2.yaml
+NAME: cullavo_step2_pre.yaml
 
 DATASETS:
-  TRAIN: ["sharegpt4v"] # instruction_train / instp_train
-  TEST: [""]
+  TRAIN: [""] # instruction_train / instp_train
+  TEST: ["sharegpt4v"]
   SIZE_DIVISIBILITY: 32
   PROPOSAL_FILES_TRAIN: []
 

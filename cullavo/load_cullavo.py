@@ -25,7 +25,7 @@ def add_adapter_step2(cullavo_model):
     lora_config = LoraConfig(
         r=64,
         lora_alpha=16,
-        target_modules=find_all_linear_names(cullavo_model.language_model),
+        target_modules=['k_proj', 'q_proj', 'up_proj', 'v_proj', 'o_proj', 'down_proj', 'gate_proj'],
         lora_dropout=0.05,
         bias='none',
         task_type="CAUSAL_LM",
