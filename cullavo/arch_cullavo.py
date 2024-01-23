@@ -451,7 +451,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 decoded_text = processor.batch_decode(generate_ids, skip_special_tokens=True)[0].split('ASSISTANT:')[-1].strip()
 
             # making new json for CuLLaVO Dataset
-            new_json_list.append({'id': batch['question_id'], 'image': batch['image_id'], 'conversations': batch['questions']})
+            new_json_list.append({'id': batch['question_id'], 'image': batch['image_id'], 'conversations': batch['question']})
 
         return new_json_list
 
