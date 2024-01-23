@@ -93,7 +93,8 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         self,
         inputs,
         processor,
-        device
+        device,
+        fix_num=5,
     ):
 
     
@@ -135,10 +136,14 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             if len(thing_index_tensor)==0: continue # Exception Handling
 
             # CLASSES - thing
-            thing_class_ids = input['instances'].gt_classes[thing_index_tensor]
-            thing_classes = [COCO_PANOPTIC_CLASSES[c].replace('-merged','').replace('-other','').replace('-stuff','') for c in thing_class_ids]
-            unique_thing_class_ids = thing_class_ids.unique()
-            unique_thing_classes = [COCO_PANOPTIC_CLASSES[c].replace('-merged','').replace('-other','').replace('-stuff','') for c in unique_thing_class_ids]
+            try: # Exception Handling
+                thing_class_ids = input['instances'].gt_classes[thing_index_tensor]
+                thing_classes = [COCO_PANOPTIC_CLASSES[c].replace('-merged','').replace('-other','').replace('-stuff','') for c in thing_class_ids]
+                unique_thing_class_ids = thing_class_ids.unique()
+                unique_thing_classes = [COCO_PANOPTIC_CLASSES[c].replace('-merged','').replace('-other','').replace('-stuff','') for c in unique_thing_class_ids]
+            except: # Exception Handling
+                print(thing_class_ids)
+                continue
 
             # BOXES - thing
             _,H,W=input['image'].shape
@@ -246,7 +251,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 raise Exception("WTF!")
 
             # Random shuffling
-            rand_int = torch.randperm(len(thing_boxes[:len(color_list)]))
+            rand_int = torch.randperm(len(thing_boxes[:len(color_list)]))[:fix_num]
 
             # Making cullavo prompt
             for r_int in rand_int:
@@ -326,7 +331,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 grounding_colors = [color_list[m.item()] for m in matching_index] 
 
                 # Random shuffling
-                rand_int = torch.randperm(len(grounding_colors))
+                rand_int = torch.randperm(len(grounding_colors))[:fix_num]
 
                 # Making cullavo prompt
                 for r_int in rand_int:
