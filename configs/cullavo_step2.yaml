@@ -16,10 +16,6 @@ OPTIMIZER:
   GRAD_MAX: 10
   GRAD_CUM: 1 # Gradient Accumulation
 
-# VQ-CLIP
-VQCLIP:
-  LOAD_VQCLIP: true # CLIP
-
 # CuLLaVO LLM
 LLM:
   LOAD_LLM: true # LLM

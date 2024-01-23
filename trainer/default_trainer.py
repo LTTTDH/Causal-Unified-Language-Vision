@@ -126,9 +126,6 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
 
         if self.opt['CUDA']:
             torch.cuda.empty_cache()
-
-        self.create_optimizer_and_scheduler()
-        self._initialize_accelerator() # accelerator
         
         self.train_params = {
                              "updates_per_epoch": len(self.train_dataloaders),
@@ -144,6 +141,9 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
 
         if self.opt.get('WEIGHT', False):
             self.load_weight(self.opt['RESUME_FROM'], must_exist=True)
+
+        self.create_optimizer_and_scheduler()
+        self._initialize_accelerator() # accelerator
 
     @staticmethod
     def dictionary_display(results):

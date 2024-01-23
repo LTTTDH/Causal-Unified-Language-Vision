@@ -3,9 +3,6 @@ import logging
 
 import torch
 import torch.nn as nn
-from transformers import AutoProcessor
-from cullavo.arch_cullavo import CuLLaVOModel
-from cullavo.utils.utils import LLAVA_LOCAL_PATH
 from utils.model import align_and_update_state_dicts
 logger = logging.getLogger(__name__)
 
@@ -55,44 +52,27 @@ class BaseModel(nn.Module):
             # Token parallel
             os.environ['TOKENIZERS_PARALLELISM']='true'
 
-        # VQ-CLIP save
-        if self.opt['VQCLIP']['LOAD_VQCLIP']:
-            if accel.is_main_process: torch.save(self.model.vq_clip.state_dict(), os.path.join(save_dir, f'epoch{epoch}', f"vq_clip.pt"))
-
     def from_pretrained(self, load_dir, accel):
         if os.path.exists(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo')):
             
-            # Memory Deallocation
-            del self.model.cullavo_model
-            del self.model.cullavo_processor
-            torch.cuda.empty_cache()
+            def lora_generator(model):
+                for name, param in model.named_parameters():
+                    if 'lora' in name:
+                        yield (name, param)
 
-            # Reallocation 
-            bits = 4 # TODO: peft config extraction
-            bnb_model_from_pretrained_args = {}
-            if bits in [4, 8]:
-                from transformers import BitsAndBytesConfig
-                bnb_model_from_pretrained_args.update(dict(
-                    load_in_4bit=bits == 4,
-                    load_in_8bit=bits == 8,
-                    torch_dtype=torch.bfloat16,
-                    attn_implementation="flash_attention_2",
-                    quantization_config=BitsAndBytesConfig(
-                        load_in_4bit=bits == 4,
-                        load_in_8bit=bits == 8,
-                        llm_int8_skip_modules=["vision_tower", "multi_modal_projector", "lm_head"],
-                        llm_int8_threshold=6.0,
-                        llm_int8_has_fp16_weight=False,
-                        bnb_4bit_compute_dtype=torch.bfloat16,
-                        bnb_4bit_use_double_quant=True,
-                        bnb_4bit_quant_type='nf4'
-                    )
-                ))
-
-            # LLaVA 4Bit compression -> PEFT adapter
-            self.model.cullavo_model = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, **bnb_model_from_pretrained_args)
-            self.model.cullavo_model.language_model.load_adapter(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo'))
-            self.model.cullavo_processor = AutoProcessor.from_pretrained(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo'), padding_side="right")
+            from safetensors import safe_open
+            with safe_open(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', 'adapter_model.safetensors'), framework="pt", device="cpu") as handle_f:
+                for key in handle_f.keys():
+                    if 'lora' in key:
+                        ckpt_tensor = handle_f.get_tensor(key)
+                        check = 0
+                        for name, param in lora_generator(self.model.cullavo_model.language_model):
+                            if name==key:
+                                param.data = ckpt_tensor
+                                check = 1
+                                break
+                        if check == 0:
+                            raise Exception("No!")
 
             # LORA -> bfloat16 conversion 
             for param in self.model.cullavo_model.parameters():
@@ -113,17 +93,9 @@ class BaseModel(nn.Module):
             # Verbose
             if accel.is_main_process: print(f'There is no CuLLaVO pretrained: {load_dir}')
 
-        # VQ CLIP
-        if self.opt['VQCLIP']['LOAD_VQCLIP']:
-            self.model.vq_clip.load_state_dict(torch.load(os.path.join("/".join(load_dir.split('/')[:-1]), f"vq_clip.pt"), map_location=accel.device))
-            self.model.vq_clip = self.model.vq_clip.eval()
-            for param in self.model.vq_clip.parameters(): param.requires_grad_(False)
-            # Verbose
-            if accel.is_main_process: print(f'VQ-CLIP Loaded!!: {load_dir}')
-        else:
-            if accel.is_main_process: print(f'There is no VQ-CLIP file: {load_dir}')
-
         state_dict = torch.load(load_dir, map_location=accel.device)
         state_dict = align_and_update_state_dicts(self.model.state_dict(), state_dict)
         self.model.load_state_dict(state_dict, strict=False)
         return self
+    
+    # for name, param in self.model.cullavo_model.named_parameters(): print(f"{name}: {param.dtype} {param.requires_grad}")

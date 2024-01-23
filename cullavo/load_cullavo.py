@@ -3,8 +3,7 @@ import torch
 from .utils.utils import LLAVA_LOCAL_PATH
 from .arch_cullavo import CuLLaVOModel
 from transformers import AutoProcessor
-from peft import LoraConfig
-from peft import prepare_model_for_kbit_training
+from peft import LoraConfig, prepare_model_for_kbit_training, get_peft_model
 
 def find_all_linear_names(model):
     cls = torch.nn.Linear
@@ -73,7 +72,6 @@ def prepare_cullavo(bits, grad_ckpt, lora):
             task_type="CAUSAL_LM",
         )
         cullavo_model.language_model.add_adapter(lora_config, adapter_name='step1')
-        cullavo_model.language_model.set_adapter("step1")
 
     elif bits in [4, 8] and not lora:
         raise Exception("training model with non-lora bits quantization is not worked")

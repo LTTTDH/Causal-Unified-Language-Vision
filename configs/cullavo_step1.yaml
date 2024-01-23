@@ -21,10 +21,6 @@ OPTIMIZER:
   GRAD_MAX: 10
   GRAD_CUM: 1 # Gradient Accumulation
 
-# VQ-CLIP
-VQCLIP:
-  LOAD_VQCLIP: true # CLIP
-
 # CuLLaVO LLM
 LLM:
   LOAD_LLM: true # LLM
@@ -34,7 +30,7 @@ LLM:
 
 # Define Test/Trainer/Saving
 PIPELINE: CuLLaVOPipeline #CuLLaVOPipeline/XDecoderPipeline/RefCOCOPipeline/COCOCaptionPipeline/LLaVAVQAPipeline/BakLLaVAVQAPipeline/LLaVAVQAPipeline_TEST/BLIP2VQAPipeline/InstructBLIPVQAPipeline/KOSMOS2VQAPipeline
-SAVE_DIR: '/mnt/ssd/lbk-cvpr/CuLLaVO'
+SAVE_DIR: '/mnt/hard/lbk-cvpr/CuLLaVO'
 base_path: "./"
 
 # Resume Logistic

@@ -6,8 +6,7 @@ from .build import register_model
 from ..utils import configurable
 
 # CuLLaVO
-from cullavo.load_cullavo import prepare_cullavo, add_adapter_step2, set_all_adapter
-from cullavo.utils.load_vqclip import prepare_clip
+from cullavo.load_cullavo import prepare_cullavo, add_adapter_step2
 
 class CuLLaVO(nn.Module):
 
@@ -18,22 +17,14 @@ class CuLLaVO(nn.Module):
         cfg,
         cullavo_model, # CuLLaVO
         cullavo_processor, # CuLLaVO
-        vq_clip,
     ):
         super().__init__()
         self.cfg = cfg
         self.cullavo_model = cullavo_model # CuLLaVO
         self.cullavo_processor = cullavo_processor # CuLLaVO
-        self.vq_clip = vq_clip
 
     @classmethod
     def from_config(cls, cfg):
-
-        # VQ-CLIP
-        if cfg['VQCLIP']['LOAD_VQCLIP']:
-            vq_clip = prepare_clip()
-        else:
-            vq_clip = None
 
         # CuLLaVO
         if cfg['LLM']['LOAD_LLM']:
@@ -49,7 +40,6 @@ class CuLLaVO(nn.Module):
             "cfg": cfg,
             "cullavo_model": cullavo_model, # CuLLaVO
             "cullavo_processor": cullavo_processor, # CuLLaVO
-            "vq_clip": vq_clip,
             }
 
     @property
@@ -70,14 +60,10 @@ class CuLLaVO(nn.Module):
             
             return self.evaluate_with_llm(batched_inputs, accel)
 
-    # VQ-CLIP - STEP0 - Vector Quantization for CLIP
-    def forward_step0(self, batched_inputs, accel):
-        return {'loss_clip': self.vq_clip(batched_inputs, accel)[2]}
-
     # CuLLaVO - STEP1 - Finetuning for Object Understanding
     def forward_step1(self, batched_inputs, accel):
         # CuLLaVO: llm preparation
-        cullavo_inputs = self.cullavo_model.step1_process(batched_inputs, self.cullavo_processor, self.vq_clip, accel.device)
+        cullavo_inputs = self.cullavo_model.step1_process(batched_inputs, self.cullavo_processor, accel.device)
         cullavo_outputs = self.cullavo_model(**cullavo_inputs)
         return {'loss_llm': cullavo_outputs.loss}
     
@@ -100,18 +86,28 @@ class CuLLaVO(nn.Module):
 
         # CuLLaVO: llm preparation
         cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
-                                                         prompt="describe this image. ASSISTANT:", 
+                                                         prompt=f"provide the class name of object in this image", 
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
+        cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
+                                                         prompt=f"provide multiple bounding box coordinates of windo in this image", 
+                                                         processor=self.cullavo_processor, 
+                                                         device=accel.device)
+        cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
+                                                         prompt=f"provide segmentation token sequence having 49 number of integer numbers from 0 to 63 for tv in this image.", 
+                                                         processor=self.cullavo_processor, 
+                                                         device=accel.device)
+
+    
         with torch.inference_mode():
-            generate_ids = self.cullavo_model.generate(**cullavo_inputs, do_sample=False, temperature=0, max_new_tokens=200, num_beams=5, no_repeat_ngram_size=2, use_cache=True)
+            generate_ids = self.cullavo_model.generate(**cullavo_inputs, do_sample=False, temperature=0, max_new_tokens=200, num_beams=5, use_cache=True)
         decoded_text = self.cullavo_processor.batch_decode(generate_ids)[0]
 
         # BOX visualizer
         from detectron2.utils.visualizer import Visualizer
         img = interpolated_images[0].permute(1,2,0).cpu().numpy()
         vis = Visualizer(img)
-        out = vis.draw_box(torch.tensor([0.6, 0.41, 0.7, 0.62])*336).get_image()
+        out = vis.draw_box(torch.tensor([0.285, 0.135, 0.584, 0.535])*336).get_image()
         
 
         # CuLLaVO 
