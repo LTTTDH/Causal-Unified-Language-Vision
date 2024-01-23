@@ -132,7 +132,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             for index, seg_info in enumerate(input['segments_info']):
                 if seg_info['isthing'] == True: thing_index_list.append(index)
             thing_index_tensor = torch.tensor(thing_index_list)[:len(color_list)]
-            if len(thing_index_tensor)==0: continue
+            if len(thing_index_tensor)==0: continue # Exception Handling
 
             # CLASSES - thing
             thing_class_ids = input['instances'].gt_classes[thing_index_tensor]
