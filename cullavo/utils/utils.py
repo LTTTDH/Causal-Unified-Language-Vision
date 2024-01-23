@@ -9,21 +9,32 @@ LLAMA2_LOCAL_PATH = ROOT_PATH + "llama-2-7b_hf"
 
 
 # Color List
-color_list = ['red', 
+# color_list = ['red', 
+#             'orange', 
+#             'coral', 
+#             'yellow', 
+#             'green', 
+#             'blue', 
+#             'navy', 
+#             'pink', 
+#             'purple', 
+#             'brown', 
+#             'violet', 
+#             'olive', 
+#             'lime', 
+#             'silver', 
+#             'gray', 
+#             'black']
+
+color_list = ['white',
+            'red', 
             'orange', 
-            'coral', 
             'yellow', 
             'green', 
             'blue', 
-            'navy', 
             'pink', 
             'purple', 
             'brown', 
-            'violet', 
-            'olive', 
-            'lime', 
-            'silver', 
-            'gray', 
             'black']
 
 def list2string(_list):
