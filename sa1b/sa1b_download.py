@@ -1,26 +1,15 @@
 import os
 import argparse
 import requests
-from multiprocessing import Pool
-
-def download_and_extract(args, skip_existing=False):
-    file_name, url, raw_dir, images_dir, masks_dir = args
-    
-    # Download the file
-    print(f'Downloading {file_name} from {url}...')
-    response = requests.get(url, stream=True)
-    with open(f'{raw_dir}/{file_name}', 'wb') as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            f.write(chunk)
-
+from tqdm import tqdm
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description='Download and extract files.')
 parser.add_argument('--processes', type=int, default=16, help='Number of processes to use for downloading and extracting files.')
 parser.add_argument('--input_file', type=str, default='sa1b.txt', help='Path to the input file containing file names and URLs.')
-parser.add_argument('--raw_dir', type=str, default='/mnt/hard/lbk-cvpr/dataset/ShareGPT4V/data/sam', help='Directory to store downloaded files.')
-parser.add_argument('--images_dir', type=str, default='/mnt/hard/lbk-cvpr/dataset/ShareGPT4V/data/sam/images', help='Directory to store extracted image files.')
-parser.add_argument('--masks_dir', type=str, default='/mnt/hard/lbk-cvpr/dataset/ShareGPT4V/data/sam/annotations', help='Directory to store extracted JSON mask files.')
+parser.add_argument('--raw_dir', type=str, default='/mnt/ssd/lbk-cvpr/dataset/ShareGPT4V/data/sam', help='Directory to store downloaded files.')
+parser.add_argument('--images_dir', type=str, default='/mnt/ssd/lbk-cvpr/dataset/ShareGPT4V/data/sam/images', help='Directory to store extracted image files.')
+parser.add_argument('--masks_dir', type=str, default='/mnt/ssd/lbk-cvpr/dataset/ShareGPT4V/data/sam/annotations', help='Directory to store extracted JSON mask files.')
 parser.add_argument('--skip_existing', action='store_true', help='Skip extraction if the file has already been extracted')
 args = parser.parse_args()
 
@@ -39,7 +28,10 @@ os.makedirs(args.raw_dir, exist_ok=True)
 os.makedirs(args.images_dir, exist_ok=True)
 os.makedirs(args.masks_dir, exist_ok=True)
 
-with Pool(processes=args.processes) as pool:
-    pool.starmap(download_and_extract, [(line.strip().split('\t') + [args.raw_dir, args.images_dir, args.masks_dir], args.skip_existing) for line in new_lines])
-
-print('All files downloaded successfully!')    
+# Download the file
+for i in range(1, 50+1):
+    response = requests.get(new_lines[i].strip().split('\t')[1], stream=True)
+    with open(os.path.join(args.raw_dir, new_lines[i].strip().split('\t')[0]), 'wb') as f:
+        for chunk in tqdm(response.iter_content(chunk_size=8192)):
+            f.write(chunk)
+    print('file download!: ' + str(new_lines[i].strip().split('\t')[0]))
