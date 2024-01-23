@@ -13,7 +13,7 @@ DATASETS:
 
 # OPTIMIZER
 OPTIMIZER:
-  LR: 2e-5 # LR
+  LR: 1e-4 # LR
   LAST_LR: 1e-6 # LAST LR
   PERIOD: 4 # Save Period
   WEIGHT_DECAY: 0 # Weight Decay
