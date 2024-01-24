@@ -3,7 +3,6 @@ import random
 import torch.nn as nn
 from copy import deepcopy
 from .utils.utils import *
-from einops import rearrange
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 from transformers.utils.generic import ModelOutput
