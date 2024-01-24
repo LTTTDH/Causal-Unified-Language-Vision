@@ -1,6 +1,7 @@
 import torch
 import random
 import torch.nn as nn
+from copy import deepcopy
 from .utils.utils import *
 from einops import rearrange
 from dataclasses import dataclass
@@ -98,7 +99,6 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         device,
         fix_num=10
     ):
-        color_list
     
         # initialization
         input_ids = None
@@ -115,8 +115,11 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         output_hidden_states = None
         return_dict = None
         
+        # deepcopy
+        _color_list= deepcopy(color_list)
+
         # shuffle color_list
-        random.shuffle(color_list)
+        random.shuffle(_color_list)
 
         # Drawing BBox & Seg
         # import numpy as np
@@ -139,8 +142,8 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 if seg_info['isthing'] == True and seg_info['category_id'] < len(COCO_PANOPTIC_CLASSES):
                     thing_index_list.append(index)
                     thing_class_id_list.append(seg_info['category_id'])
-            thing_index_tensor = torch.tensor(thing_index_list)[:len(color_list)]
-            thing_class_ids = torch.tensor(thing_class_id_list)[:len(color_list)]
+            thing_index_tensor = torch.tensor(thing_index_list)[:len(_color_list)]
+            thing_class_ids = torch.tensor(thing_class_id_list)[:len(_color_list)]
             if len(thing_index_tensor)==0: continue # Exception Handling
 
             # CLASSES - thing
@@ -149,17 +152,16 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             unique_thing_classes = [COCO_PANOPTIC_CLASSES[c.item()].replace('-merged','').replace('-other','').replace('-stuff','') for c in unique_thing_class_ids]
 
             # BOXES - thing
-            _,H,W=input['image'].shape
+            _,H,W = input['image'].shape
             input['instances'].gt_boxes.scale(1/W,1/H)
             thing_boxes = input['instances'].gt_boxes.tensor[thing_index_tensor]
 
             # BOX Image
-            img = input['image'].cpu().numpy()
-            img = rearrange(img, 'c h w -> h w c')
+            img = input['image'].permute(1, 2, 0).cpu().numpy()
             vis = Visualizer(img)
             vis._default_font_size = 4 # box edge font
             boxed_image = vis.overlay_instances(boxes=(thing_boxes*H).cpu().numpy(),
-                                                assigned_colors=color_list[:len(thing_index_tensor)],
+                                                assigned_colors=_color_list[:len(thing_index_tensor)],
                                                 alpha=1).get_image()
 
             # cullavo prompt prefix
@@ -225,10 +227,10 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             if rolling_dice == 0:
                 # IMAGE -> COLOR
                 prompt = f"provide multiple colors for multiple bounding boxes in this image"
-                if len(color_list[:len(thing_index_tensor)])==1:
-                    answer = f"Sure, it is {list2string(color_list[:len(thing_index_tensor)])} color. There is one bounding box in this image."
+                if len(_color_list[:len(thing_index_tensor)])==1:
+                    answer = f"Sure, it is {list2string(_color_list[:len(thing_index_tensor)])} color. There is one bounding box in this image."
                 else:
-                    answer = f"Sure, it is {list2string(color_list[:len(thing_index_tensor)])} color. There are {len(color_list[:len(thing_index_tensor)])} bounding boxes in this image."
+                    answer = f"Sure, it is {list2string(_color_list[:len(thing_index_tensor)])} color. There are {len(_color_list[:len(thing_index_tensor)])} bounding boxes in this image."
 
                 cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                 cullavo_label=cullavo_label, 
@@ -246,7 +248,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 selected_index = torch.where(thing_class_ids==selected_class_id)
                 selected_classes = [thing_classes[i.item()] for i in selected_index[0]]
                 selected_boxes = thing_boxes[selected_index]
-                selected_colors = [color_list[i.item()] for i in selected_index[0]]
+                selected_colors = [_color_list[i.item()] for i in selected_index[0]]
 
                 prompt = f"provide multiple colors for multiple bounding boxes corresponding the class name of {selected_class} in this image"
                 if len(selected_classes)==1:
@@ -265,13 +267,13 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 raise Exception("WTF!")
 
             # Random shuffling
-            rand_int = torch.randperm(len(thing_boxes[:len(color_list)]))[:fix_num]
+            rand_int = torch.randperm(len(thing_boxes[:len(_color_list)]))[:fix_num]
 
             # Making cullavo prompt
             for r_int in rand_int:
                 cls = thing_classes[r_int]
                 box = thing_boxes[r_int]
-                color = color_list[r_int]
+                color = _color_list[r_int]
 
                 # Rolling dice 
                 rolling_dice = torch.randint(high=2, low=0, size=(1,)).item()
@@ -342,7 +344,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 matching_index = pairwise_iou(grounding_boxes, Boxes(thing_boxes.cpu())).argmax(dim=1)
 
                 # color
-                grounding_colors = [color_list[m.item()] for m in matching_index] 
+                grounding_colors = [_color_list[m.item()] for m in matching_index] 
 
                 # Random shuffling
                 rand_int = torch.randperm(len(grounding_colors))[:fix_num]

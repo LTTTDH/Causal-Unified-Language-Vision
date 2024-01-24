@@ -77,6 +77,7 @@ class CuLLaVOPipeline:
         loss_info = {k: v.detach().item() for k,v in loss.items()}
         sample_size_info = {'num_samples': len(batch)}
         loss = sum(loss for loss in loss.values())
+        trainer.accel.wait_for_everyone() # Wait for Sync
         trainer.backward_loss(loss)
         if trainer.accel.sync_gradients:
             trainer.accel.clip_grad_norm_(trainer.model.parameters(), self._opt['OPTIMIZER']['GRAD_MAX'])
