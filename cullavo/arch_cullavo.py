@@ -200,9 +200,9 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
 
                 prompt = f"provide multiple bounding box coordinates corresponding {selected_class} in this image"
                 if len(selected_classes)==1:
-                    answer = f"Sure, it is {classesboxes2string(selected_classes, selected_boxes)}. There is one object in this image."
+                    answer = f"Sure, it is {classesboxes2string(selected_classes, selected_boxes)}. There is one bounding box in this image."
                 else:
-                    answer = f"Sure, it is {classesboxes2string(selected_classes, selected_boxes)}. There are {len(selected_classes)} objects in this image."
+                    answer = f"Sure, it is {classesboxes2string(selected_classes, selected_boxes)}. There are {len(selected_classes)} bounding boxes in this image."
 
                 cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                 cullavo_label=cullavo_label, 

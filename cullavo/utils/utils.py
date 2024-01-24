@@ -23,7 +23,7 @@ color_list = ['white',
             'violet', 
             'olive', 
             'lime', 
-            'magenta'
+            'magenta',
             'silver', 
             'gray', 
             'black']
