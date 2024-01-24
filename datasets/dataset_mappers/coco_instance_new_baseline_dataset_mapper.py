@@ -25,7 +25,7 @@ def convert_coco_poly_to_mask(segmentations, height, width):
         mask = coco_mask.decode(rles)
         if len(mask.shape) < 3:
             mask = mask[..., None]
-        mask = torch.as_tensor(mask, dtype=torch.uint8)
+        mask = torch.from_numpy(mask, dtype=torch.uint8)
         mask = mask.any(dim=2)
         masks.append(mask)
     if masks:
@@ -146,8 +146,8 @@ class COCOInstanceNewBaselineDatasetMapper:
         # Pytorch's dataloader is efficient on torch.Tensor due to shared-memory,
         # but not efficient on large generic data structures due to the use of pickle & mp.Queue.
         # Therefore it's important to use torch.Tensor.
-        dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
-        dataset_dict["padding_mask"] = torch.as_tensor(np.ascontiguousarray(padding_mask))
+        dataset_dict["image"] = torch.from_numpy(np.array(image.transpose(2, 0, 1)))
+        dataset_dict["padding_mask"] = torch.from_numpy(np.array(padding_mask))
 
         if not self.is_train:
             # USER: Modify this if you want to keep them for some reason.
@@ -181,7 +181,7 @@ class COCOInstanceNewBaselineDatasetMapper:
             instances = utils.filter_empty_instances(instances)
             # Generate masks from polygon
             h, w = instances.image_size
-            # image_size_xyxy = torch.as_tensor([w, h, w, h], dtype=torch.float)
+            # image_size_xyxy = torch.from_numpy([w, h, w, h], dtype=torch.float)
             if hasattr(instances, 'gt_masks'):
                 gt_masks = instances.gt_masks
                 gt_masks = convert_coco_poly_to_mask(gt_masks.polygons, h, w)

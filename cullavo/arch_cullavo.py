@@ -152,7 +152,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             thing_boxes = input['instances'].gt_boxes.tensor[thing_index_tensor]
 
             # BOX Image
-            img = input['image'].permute(1,2,0).cpu().numpy()
+            img = input['image'].clone().permute(1,2,0).cpu().numpy()
             vis = Visualizer(img)
             vis._default_font_size = 4 # box edge font
             boxed_image = vis.overlay_instances(boxes=(thing_boxes*H).cpu().numpy(),

@@ -130,9 +130,9 @@ class MaskFormerSemanticDatasetMapper:
         sem_seg_gt = aug_input.sem_seg
 
         # Pad image and segmentation label here!
-        image = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
+        image = torch.from_numpy(np.array(image.transpose(2, 0, 1)))
         if sem_seg_gt is not None:
-            sem_seg_gt = torch.as_tensor(sem_seg_gt.astype("long"))
+            sem_seg_gt = torch.from_numpy(sem_seg_gt.astype("long"))
 
         if self.size_divisibility > 0:
             image_size = (image.shape[-2], image.shape[-1])
@@ -177,7 +177,7 @@ class MaskFormerSemanticDatasetMapper:
                 instances.gt_masks = torch.zeros((0, sem_seg_gt.shape[-2], sem_seg_gt.shape[-1]))
             else:
                 masks = BitMasks(
-                    torch.stack([torch.from_numpy(np.ascontiguousarray(x.copy())) for x in masks])
+                    torch.stack([torch.from_numpy(np.array(x.copy())) for x in masks])
                 )
                 instances.gt_masks = masks.tensor
 

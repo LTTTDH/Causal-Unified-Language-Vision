@@ -162,7 +162,7 @@ class HungarianMatcher(nn.Module):
             indices.append(linear_sum_assignment(C))
 
         return [
-            (torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
+            (torch.from_numpy(i, dtype=torch.int64), torch.from_numpy(j, dtype=torch.int64))
             for i, j in indices
         ]
 
@@ -244,7 +244,7 @@ class HungarianMatcher(nn.Module):
             indices.append(linear_sum_assignment(C))
 
         return [
-            (torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
+            (torch.from_numpy(i, dtype=torch.int64), torch.from_numpy(j, dtype=torch.int64))
             for i, j in indices
         ], pred_logits
 
@@ -306,7 +306,7 @@ class HungarianMatcher(nn.Module):
             indices.append(linear_sum_assignment(C))
 
         return [
-            (torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
+            (torch.from_numpy(i, dtype=torch.int64), torch.from_numpy(j, dtype=torch.int64))
             for i, j in indices
         ]
 
@@ -372,7 +372,7 @@ class HungarianMatcher(nn.Module):
             indices.append(linear_sum_assignment(C))
 
         return [
-            (torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
+            (torch.from_numpy(i, dtype=torch.int64), torch.from_numpy(j, dtype=torch.int64))
             for i, j in indices
         ]
 
@@ -447,7 +447,7 @@ class HungarianMatcher(nn.Module):
             indices.append(linear_sum_assignment(C))
 
         return [
-            (torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
+            (torch.from_numpy(i, dtype=torch.int64), torch.from_numpy(j, dtype=torch.int64))
             for i, j in indices
         ]
 
@@ -482,7 +482,7 @@ class HungarianMatcher(nn.Module):
             indices.append(linear_sum_assignment(C))
 
         return [
-            (torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
+            (torch.from_numpy(i, dtype=torch.int64), torch.from_numpy(j, dtype=torch.int64))
             for i, j in indices
         ]
 
@@ -552,7 +552,7 @@ class HungarianMatcher(nn.Module):
             indices.append(linear_sum_assignment(C))
 
         return [
-            (torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
+            (torch.from_numpy(i, dtype=torch.int64), torch.from_numpy(j, dtype=torch.int64))
             for i, j in indices
         ]
 

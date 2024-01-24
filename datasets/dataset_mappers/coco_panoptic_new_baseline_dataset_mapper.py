@@ -140,7 +140,7 @@ class COCOPanopticNewBaselineDatasetMapper:
         # Pytorch's dataloader is efficient on torch.Tensor due to shared-memory,
         # but not efficient on large generic data structures due to the use of pickle & mp.Queue.
         # Therefore it's important to use torch.Tensor.
-        dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
+        dataset_dict["image"] = torch.tensor(image.transpose(2, 0, 1))
 
         # Add caption noun that is not in coco set to target
         captions = dataset_dict["captions"]
@@ -188,7 +188,7 @@ class COCOPanopticNewBaselineDatasetMapper:
                 instances.gt_boxes = Boxes(torch.zeros((0, 4)))
             else:
                 masks = BitMasks(
-                    torch.stack([torch.from_numpy(np.ascontiguousarray(x.copy())) for x in masks])
+                    torch.stack([torch.from_numpy(np.array(x.copy())) for x in masks])
                 )
                 instances.gt_masks = masks.tensor
                 instances.gt_boxes = masks.get_bounding_boxes()

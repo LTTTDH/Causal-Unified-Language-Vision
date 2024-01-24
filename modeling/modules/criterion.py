@@ -731,7 +731,7 @@ class SetCriterion(nn.Module):
 
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         num_masks = sum(len(t["labels"]) for t in targets)
-        num_masks = torch.as_tensor(
+        num_masks = torch.from_numpy(
             [num_masks], dtype=torch.float, device=next(iter(outputs_without_aux.values())).device
         )
         if is_dist_avail_and_initialized():
@@ -792,7 +792,7 @@ class SetCriterion(nn.Module):
 
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         num_masks = sum(len(t["grounding_masks"]) for t in targets) + 1e-7
-        num_masks = torch.as_tensor(
+        num_masks = torch.from_numpy(
             [num_masks], dtype=torch.float, device=next(iter(outputs.values())).device
         )
         if is_dist_avail_and_initialized():
@@ -833,7 +833,7 @@ class SetCriterion(nn.Module):
 
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         num_masks = sum(len(t["labels"]) for t in targets)
-        num_masks = torch.as_tensor(
+        num_masks = torch.from_numpy(
             [num_masks], dtype=torch.float, device=neg_class_emb.device
         )
         if is_dist_avail_and_initialized():

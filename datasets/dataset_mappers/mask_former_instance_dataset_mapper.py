@@ -143,8 +143,8 @@ class MaskFormerInstanceDatasetMapper:
                 )
 
         # Pad image and segmentation label here!
-        image = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
-        masks = [torch.from_numpy(np.ascontiguousarray(x)) for x in masks]
+        image = torch.from_numpy(np.array(image.transpose(2, 0, 1)))
+        masks = [torch.from_numpy(np.array(x)) for x in masks]
 
         classes = [int(obj["category_id"]) for obj in annos]
         classes = torch.tensor(classes, dtype=torch.int64)

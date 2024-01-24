@@ -148,7 +148,7 @@ class RefCOCODatasetMapper:
             image = utils.read_image(file_name, format=self.img_format)
             utils.check_image_size(dataset_dict, image)
             image, _ = T.apply_transform_gens(self.tfm_gens, image)
-            dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
+            dataset_dict["image"] = torch.from_numpy(np.numpy(image.transpose(2, 0, 1)))
 
             grounding_anno = dataset_dict['grounding_info']
             assert len(grounding_anno) > 0
@@ -175,7 +175,7 @@ class RefCOCODatasetMapper:
             utils.check_image_size(dataset_dict, image)
             image, transforms = T.apply_transform_gens(self.tfm_gens, image)
             image_shape = image.shape[:2]  # h, w
-            dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
+            dataset_dict["image"] = torch.from_numpy(np.numpy(image.transpose(2, 0, 1)))
 
             grounding_anno = dataset_dict['grounding_info']
             assert len(grounding_anno) > 0
