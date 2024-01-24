@@ -29,9 +29,14 @@ os.makedirs(args.images_dir, exist_ok=True)
 os.makedirs(args.masks_dir, exist_ok=True)
 
 # Download the file
-for i in range(1, 50+1):
-    response = requests.get(new_lines[i].strip().split('\t')[1], stream=True)
-    with open(os.path.join(args.raw_dir, new_lines[i].strip().split('\t')[0]), 'wb') as f:
-        for chunk in tqdm(response.iter_content(chunk_size=8192)):
-            f.write(chunk)
-    print('file download!: ' + str(new_lines[i].strip().split('\t')[0]))
+for i in range(3, 50+1):
+    try:
+        response = requests.get(new_lines[i].strip().split('\t')[1], stream=True)
+        with open(os.path.join(args.raw_dir, new_lines[i].strip().split('\t')[0]), 'wb') as f:
+            for chunk in tqdm(response.iter_content(chunk_size=8192)):
+                f.write(chunk)
+        print('file download!: ' + str(new_lines[i].strip().split('\t')[0]))
+    except:
+        print('Error!: ' + str(new_lines[i].strip().split('\t')[0]))
+        continue
+
