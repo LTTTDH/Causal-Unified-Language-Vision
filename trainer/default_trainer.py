@@ -126,7 +126,13 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
 
         if self.opt['CUDA']:
             torch.cuda.empty_cache()
-        
+
+        if self.opt.get('WEIGHT', False):
+            self.load_weight(self.opt['RESUME_FROM'], must_exist=True)
+
+        self.create_optimizer_and_scheduler()
+        self._initialize_accelerator() # accelerator
+
         self.train_params = {
                              "updates_per_epoch": len(self.train_dataloaders),
                              "total_batch_size": 0,
@@ -138,12 +144,6 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
                              "current_batch_idx": 0,
                              "resume_epoch_idx": 0, 
                              }
-
-        if self.opt.get('WEIGHT', False):
-            self.load_weight(self.opt['RESUME_FROM'], must_exist=True)
-
-        self.create_optimizer_and_scheduler()
-        self._initialize_accelerator() # accelerator
 
     @staticmethod
     def dictionary_display(results):
@@ -172,7 +172,6 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
             if self.accel.is_main_process and self.opt['WANDB']:
                 wandb.log(results)
 
-        train_prev_logged_time = datetime.now()
         for epoch in range(self.train_params['start_epoch_idx'], num_epochs):
             self.train_params['current_epoch_idx'] = epoch
             logger.info(f"Start epoch: {epoch} training.")

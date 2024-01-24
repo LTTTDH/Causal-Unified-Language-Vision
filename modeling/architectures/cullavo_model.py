@@ -86,15 +86,15 @@ class CuLLaVO(nn.Module):
 
         # CuLLaVO: llm preparation
         cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
-                                                         prompt=f"provide the class name of object in this image", 
+                                                         prompt=f"provide multiple class names of multiple objects and their numbering index in this image.", 
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
         cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
-                                                         prompt=f"provide multiple bounding box coordinates of windo in this image", 
+                                                         prompt=f"what number of charis in this image?", 
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
         cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
-                                                         prompt=f"provide segmentation token sequence having 49 number of integer numbers from 0 to 63 for tv in this image.", 
+                                                         prompt=f"provide multiple bounding box coordinates corresponding flower vase in this image.", 
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
 
@@ -107,7 +107,7 @@ class CuLLaVO(nn.Module):
         from detectron2.utils.visualizer import Visualizer
         img = interpolated_images[0].permute(1,2,0).cpu().numpy()
         vis = Visualizer(img)
-        out = vis.draw_box(torch.tensor([0.285, 0.135, 0.584, 0.535])*336).get_image()
+        out = vis.draw_box(torch.tensor([0.571, 0.545, 0.631, 0.732])*336, alpha=1).get_image()
         
 
         # CuLLaVO 
