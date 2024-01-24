@@ -98,21 +98,9 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
         # set all modules and criteria into training mode
         self.model.train()
 
-        total_batch_sample = 0
-
         loss_info, sample_size_info, extra_info = self.pipeline.forward_step(self, batch)
 
         self.train_loss.update_iter(loss_info)
-        total_batch_sample += sample_size_info['num_samples']
-
-        # update losses and item counts of an effective batch to the AverageMeters
-        total_batch_sample = torch.tensor(total_batch_sample).to(self.accel.device)
-        torch.distributed.all_reduce(total_batch_sample, torch.distributed.ReduceOp.SUM)
-        total_batch_sample = total_batch_sample.item()
-
-        self.train_params['total_batch_size'] += total_batch_sample
-
-        self.train_params['num_updates'] += 1
         
     def init_train(self):
         self.mode = "train"

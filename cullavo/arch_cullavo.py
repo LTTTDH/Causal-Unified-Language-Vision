@@ -2,6 +2,7 @@ import torch
 import random
 import torch.nn as nn
 from .utils.utils import *
+from einops import rearrange
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 from transformers.utils.generic import ModelOutput
@@ -95,6 +96,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         inputs,
         processor,
         device,
+        fix_num=10
     ):
         color_list
     
@@ -152,7 +154,8 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             thing_boxes = input['instances'].gt_boxes.tensor[thing_index_tensor]
 
             # BOX Image
-            img = input['image'].clone().permute(1,2,0).cpu().numpy()
+            img = input['image'].cpu().numpy()
+            img = rearrange(img, 'c h w -> h w c')
             vis = Visualizer(img)
             vis._default_font_size = 4 # box edge font
             boxed_image = vis.overlay_instances(boxes=(thing_boxes*H).cpu().numpy(),
@@ -262,7 +265,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 raise Exception("WTF!")
 
             # Random shuffling
-            rand_int = torch.randperm(len(thing_boxes[:len(color_list)]))
+            rand_int = torch.randperm(len(thing_boxes[:len(color_list)]))[:fix_num]
 
             # Making cullavo prompt
             for r_int in rand_int:
@@ -342,7 +345,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 grounding_colors = [color_list[m.item()] for m in matching_index] 
 
                 # Random shuffling
-                rand_int = torch.randperm(len(grounding_colors))
+                rand_int = torch.randperm(len(grounding_colors))[:fix_num]
 
                 # Making cullavo prompt
                 for r_int in rand_int:
