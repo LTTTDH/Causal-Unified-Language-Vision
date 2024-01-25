@@ -78,10 +78,11 @@ class CuLLaVOPipeline:
         sample_size_info = {'num_samples': len(batch)}
         loss = sum(loss for loss in loss.values())
         trainer.accel.wait_for_everyone() # Wait for Sync
-        trainer.backward_loss(loss)
-        if trainer.accel.sync_gradients:
-            trainer.accel.clip_grad_norm_(trainer.model.parameters(), self._opt['OPTIMIZER']['GRAD_MAX'])
-        trainer.update_model()
+        if loss.requires_grad: # TRY-EXCEPT HANDLING
+            trainer.backward_loss(loss)
+            if trainer.accel.sync_gradients:
+                trainer.accel.clip_grad_norm_(trainer.model.parameters(), self._opt['OPTIMIZER']['GRAD_MAX'])
+            trainer.update_model()
         return loss_info, sample_size_info, extra_info
 
     def evaluate_model(
