@@ -8,7 +8,7 @@ image_bath=4
 test_batch=1
 
 # CuLLaVOPipeline
-TORCH_USE_CUDA_DSA=1 CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
+CUDA_LAUNCH_BLOCKING=1 TORCH_USE_CUDA_DSA=1 CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
             accelerate launch --config_file configs/accel/ddp_accel.yaml \
             --num_processes=$n_gpu \
             entry.py train \

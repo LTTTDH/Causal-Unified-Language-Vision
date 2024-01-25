@@ -137,16 +137,13 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
 
             # only consider thing object
             thing_index_list = []
-            thing_class_id_list = []
-            for index, seg_info in enumerate(input['segments_info']):
-                if seg_info['isthing'] == True and seg_info['category_id'] < len(COCO_PANOPTIC_CLASSES):
-                    thing_index_list.append(index)
-                    thing_class_id_list.append(seg_info['category_id'])
+            for index, is_things in enumerate(input['instances'].is_things):
+                if is_things: thing_index_list.append(index)
             thing_index_tensor = torch.tensor(thing_index_list)[:len(_color_list)]
-            thing_class_ids = torch.tensor(thing_class_id_list)[:len(_color_list)]
             if len(thing_index_tensor)==0: continue # Exception Handling
 
             # CLASSES - thing
+            thing_class_ids = input['instances'].gt_classes[thing_index_tensor]
             thing_classes = [COCO_PANOPTIC_CLASSES[c.item()].replace('-merged','').replace('-other','').replace('-stuff','') for c in thing_class_ids]
             unique_thing_class_ids = thing_class_ids.unique()
             unique_thing_classes = [COCO_PANOPTIC_CLASSES[c.item()].replace('-merged','').replace('-other','').replace('-stuff','') for c in unique_thing_class_ids]
