@@ -134,6 +134,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         batched_cullavo_prompt=[]
         batched_cullavo_label=[]
         for input in inputs:
+
             # only consider thing object
             thing_index_list = []
             thing_class_id_list = []
@@ -156,8 +157,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             thing_boxes = input['instances'].gt_boxes.tensor[thing_index_tensor]
 
             # BOX Image
-            img = input['image'].permute(1, 2, 0).cpu().numpy()
-            vis = Visualizer(img)
+            vis = Visualizer(input['image'].cpu().permute(1,2,0))
             vis._default_font_size = 4 # box edge font
             boxed_image = vis.overlay_instances(boxes=(thing_boxes*H).cpu().numpy(),
                                                 assigned_colors=_color_list[:len(thing_index_tensor)],

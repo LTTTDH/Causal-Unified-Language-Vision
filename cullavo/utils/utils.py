@@ -64,7 +64,7 @@ def boxes2string(boxes):
         if i!=len(boxes)-1: out+=', '
     return out
 
-def classescolors2string(classes, colors, class_num=1000):
+def classescolors2string(classes, colors):
     count = {}
     out = ''
     for i, (x, y) in enumerate(zip(classes, colors)):
@@ -77,7 +77,7 @@ def classescolors2string(classes, colors, class_num=1000):
     return out
 
 
-def classesboxes2string(classes, boxes, class_num=1000):
+def classesboxes2string(classes, boxes):
     count = {}
     out = ''
     for i, (x, y) in enumerate(zip(classes, boxes)):
