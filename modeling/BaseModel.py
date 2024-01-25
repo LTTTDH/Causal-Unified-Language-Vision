@@ -49,6 +49,18 @@ class BaseModel(nn.Module):
                 multi_modal_projector_state_dict.update({name: param.detach().cpu().clone()})
             if accel.is_main_process: torch.save(multi_modal_projector_state_dict, os.path.join(llm_path, "multi_modal_projector.pt"))
 
+            # lm head save
+            lm_head_state_dict = {}
+            for name, param in accel.unwrap_model(self.model.cullavo_model.language_model.lm_head).named_parameters():
+                lm_head_state_dict.update({name: param.detach().cpu().clone()})
+            if accel.is_main_process: torch.save(lm_head_state_dict, os.path.join(llm_path, "lm_head.pt"))
+
+            # word embedding save
+            embed_tokens_state_dict = {}
+            for name, param in accel.unwrap_model(self.model.cullavo_model.get_input_embeddings()).named_parameters():
+                embed_tokens_state_dict.update({name: param.detach().cpu().clone()})
+            if accel.is_main_process: torch.save(embed_tokens_state_dict, os.path.join(llm_path, "embed_tokens.pt"))
+
             # Token parallel
             os.environ['TOKENIZERS_PARALLELISM']='true'
 
@@ -81,14 +93,22 @@ class BaseModel(nn.Module):
 
             # torch load for multi modal projector 
             multi_modal_projector_state_dict = torch.load(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', "multi_modal_projector.pt"), map_location=accel.device)
-            self.model.cullavo_model.multi_modal_projector.load_state_dict(multi_modal_projector_state_dict)
+            mm_proj_msg = self.model.cullavo_model.multi_modal_projector.load_state_dict(multi_modal_projector_state_dict)
+
+            # torch load for lm head
+            lm_head_state_dict = torch.load(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', "lm_head.pt"), map_location=accel.device)
+            lm_head_msg = self.model.cullavo_model.language_model.lm_head.load_state_dict(lm_head_state_dict)
+
+            # torch load for embed tokens
+            embed_tokens_state_dict = torch.load(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', "embed_tokens.pt"), map_location=accel.device)
+            embed_tokens_msg = self.model.cullavo_model.get_input_embeddings().load_state_dict(embed_tokens_state_dict)
 
             # Freeze Parameter for Evaluating
             self.model.cullavo_model = self.model.cullavo_model.eval()
             for param in self.model.cullavo_model.parameters(): param.requires_grad_(False)
 
             # Verbose
-            if accel.is_main_process: print(f'CuLLaVO Loaded!!: {load_dir}')
+            if accel.is_main_process: print(f'CuLLaVO Loaded!!: {load_dir}, {mm_proj_msg}, {lm_head_msg}, {embed_tokens_msg}')
         else:
             # Verbose
             if accel.is_main_process: print(f'There is no CuLLaVO pretrained: {load_dir}')

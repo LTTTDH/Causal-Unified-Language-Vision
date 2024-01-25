@@ -87,8 +87,16 @@ def prepare_cullavo(bits, grad_ckpt, lora):
         if 'float32' in str(param.dtype).lower():
             param.data = param.data.to(torch.bfloat16)
             
-    # Training Linear Connection
+    # Training MM projector
     for param in cullavo_model.multi_modal_projector.parameters():
+        param.requires_grad_(True)
+
+    # Training lm head
+    for param in cullavo_model.language_model.lm_head.parameters():
+        param.requires_grad_(True)
+
+    # Training embed_tokens
+    for param in cullavo_model.get_input_embeddings().parameters():
         param.requires_grad_(True)
     
     # Add tokens to tokenzier for CuLLaVO

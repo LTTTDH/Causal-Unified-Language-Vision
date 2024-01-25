@@ -86,28 +86,36 @@ class CuLLaVO(nn.Module):
 
         # CuLLaVO: llm preparation
         cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
-                                                         prompt=f"provide multiple class names of multiple objects and their numbering index in this image.", 
+                                                         prompt=f"provide multiple class names for multiple objects and their numbering index in this image.", 
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
         cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
-                                                         prompt=f"what number of charis in this image?", 
+                                                         prompt=f"provide multiple coordinates of multiple bounding boxes corresponding multiple objects in this image.", 
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
         cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
-                                                         prompt=f"provide multiple bounding box coordinates corresponding flower vase in this image.", 
+                                                         prompt=f"provide multiple bounding box coordinates corresponding clock in this image.", 
+                                                         processor=self.cullavo_processor, 
+                                                         device=accel.device)
+        cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
+                                                         prompt=f"provide multiple coordinates of multiple bounding boxes corresponding the class name of window in this image", 
+                                                         processor=self.cullavo_processor, 
+                                                         device=accel.device)
+        cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
+                                                         prompt=f"Is there any red bounding box in this image?", 
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
 
     
         with torch.inference_mode():
-            generate_ids = self.cullavo_model.generate(**cullavo_inputs, do_sample=False, temperature=0, max_new_tokens=200, num_beams=5, use_cache=True)
+            generate_ids = self.cullavo_model.generate(**cullavo_inputs, do_sample=True, temperature=0.9, topk=50, topp=0.95, max_new_tokens=1000, use_cache=True)
         decoded_text = self.cullavo_processor.batch_decode(generate_ids)[0]
 
         # BOX visualizer
         from detectron2.utils.visualizer import Visualizer
         img = interpolated_images[0].permute(1,2,0).cpu().numpy()
         vis = Visualizer(img)
-        out = vis.draw_box(torch.tensor([0.571, 0.545, 0.631, 0.732])*336, alpha=1).get_image()
+        out = vis.draw_box(torch.tensor([0.424, 0.193, 0.468, 0.453])*336, alpha=1).get_image()
         
 
         # CuLLaVO 
