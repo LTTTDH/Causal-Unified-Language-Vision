@@ -412,7 +412,10 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             batched_boxed_image.append(torch.from_numpy(boxed_image).permute(2, 0, 1).to(device))
             batched_cullavo_prompt.append(cullavo_prompt)
             batched_cullavo_label.append(cullavo_label)
-            
+        
+        # TRY-EXCEPT Handling
+        if len(batched_cullavo_prompt) == 0: return {"input_ids": None}
+
         '''For Final Outputs'''
         cullavo_inputs = \
         processor(text=batched_cullavo_prompt, images=torch.stack(batched_boxed_image), padding=True, return_tensors="pt")

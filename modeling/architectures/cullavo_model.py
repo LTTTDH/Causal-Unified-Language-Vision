@@ -64,8 +64,14 @@ class CuLLaVO(nn.Module):
     def forward_step1(self, batched_inputs, accel):
         # CuLLaVO: llm preparation
         cullavo_inputs = self.cullavo_model.step1_process(batched_inputs, self.cullavo_processor, accel.device)
-        cullavo_outputs = self.cullavo_model(**cullavo_inputs)
-        return {'loss_llm': cullavo_outputs.loss}
+
+        # TRY-EXCEPT HANDLING
+        if cullavo_inputs['input_ids']!=None:
+            cullavo_outputs = self.cullavo_model(**cullavo_inputs)
+            return {'loss_llm': cullavo_outputs.loss}
+        else:
+            return {'loss_llm': torch.tensor([0]).to(accel.device)}
+
     
     # CuLLaVO - STEP2 - Finetuning for Instruction tuning based on Object Understanding
     def forward_step2_pre(self, batched_inputs, accel):
