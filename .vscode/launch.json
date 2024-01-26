@@ -37,7 +37,7 @@
             "--conf_files", "configs/cullavo_step1.yaml",
             "--overrides", "WANDB", "False",
             "PIPELINE", "CuLLaVOPipeline", // CuLLaVOPipeline/LLaVAVQATESTPipeline/BLIP2ImageNetPipeline/InstructBLIPImageNetPipeline
-            "COCO.TEST.BATCH_SIZE_TOTAL", "1",
+            "COCO.TEST.BATCH_SIZE_TOTAL", "16",
             "COCO.TRAIN.BATCH_SIZE_TOTAL", "1",
             "COCO.TRAIN.BATCH_SIZE_PER_GPU", "1",
             "SHAREGPT.TRAIN.BATCH_SIZE_TOTAL", "2",

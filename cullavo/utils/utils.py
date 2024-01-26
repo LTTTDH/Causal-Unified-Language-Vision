@@ -38,7 +38,7 @@ color_list = ['white',
 #             'blue', 
 #             'pink', 
 #             'purple', 
-#             'brown', 
+#             'gray', 
 #             'black']
 
 def list2string(_list):
@@ -72,7 +72,7 @@ def classescolors2string(classes, colors):
             count[x]+=1
         else:
             count.update({x: 1})
-        out+=f"{y} ({x} #{count[x]})"
+        out+=f"({x} #{count[x]}) {y}"
         if i!=len(classes)-1: out+=', '
     return out
 
@@ -85,7 +85,7 @@ def classesboxes2string(classes, boxes):
             count[x]+=1
         else:
             count.update({x: 1})
-        out+=f"{box2string(y)} ({x} #{count[x]})"
+        out+=f"({x} #{count[x]}) {box2string(y)}"
         if i!=len(classes)-1: out+=', '
     return out
 
@@ -97,6 +97,6 @@ def classes2string(classes):
             count[x]+=1
         else:
             count.update({x: 1})
-        out+=f"{x} (#{count[x]})"
+        out+=f"(#{count[x]}) {x}"
         if i!=len(classes)-1: out+=', '
     return out

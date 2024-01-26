@@ -73,7 +73,7 @@ def prepare_cullavo(bits, grad_ckpt, lora):
             lora_dropout=0.05,
             bias='none',
             task_type="CAUSAL_LM",
-            layers_to_transform=list(range(17, 23))
+            layers_to_transform=list(range(12, 23))
         )
         lora_llm_config = LoraConfig(
             r=64,

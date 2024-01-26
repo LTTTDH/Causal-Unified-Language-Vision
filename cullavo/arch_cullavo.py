@@ -9,7 +9,6 @@ from transformers.utils.generic import ModelOutput
 from transformers import LlavaForConditionalGeneration
 from utils.constants import COCO_PANOPTIC_CLASSES
 from detectron2.utils.visualizer import Visualizer
-from detectron2.structures import BitMasks, Boxes, pairwise_iou
 
 @dataclass
 class CullavoCausalLMOutputWithPast(ModelOutput):
@@ -25,8 +24,6 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
     def __init__(self, config):
         super().__init__(config)
     
-
-
     @staticmethod
     def make_system_prompt(processor, device, ignore_index):
         # system prompt
@@ -65,16 +62,20 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
     def eval_process(
         self,
         images,
-        prompt,
-        processor,
-        device):
+        aux_prompt=None,
+        prompt=None,
+        processor=None,
+        device=None):
         batched_cullavo_prompt=[]
 
         # cullavo prompt prefix
         cullavo_prompt, _ = self.make_system_prompt(processor, device, self.config.ignore_index)
 
         # CLASS
-        cullavo_prompt += f" USER: {prompt} ASSISTANT:"
+        if aux_prompt:
+            cullavo_prompt += f" {aux_prompt} USER: {prompt} ASSISTANT:"
+        else:
+            cullavo_prompt += f" USER: {prompt} ASSISTANT:"
         
         '''For Final Outputs'''
         cullavo_inputs = processor(text=cullavo_prompt, images=images, padding=True, return_tensors="pt")
@@ -163,12 +164,12 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             # cullavo prompt prefix
             cullavo_prompt, cullavo_label = self.make_system_prompt(processor, device, self.config.ignore_index)
             
-            # IMAGE -> CLASS
-            prompt = f"provide multiple object names and their numbering index in this image."
+            # IMAGE -> CLASS, BOX
+            prompt = f"provide multiple object names with their numbering index and the objects' bounding box coordinates in this image."
             if len(thing_classes)==1:
-                answer = f"Sure, it is {classes2string(thing_classes)}. There is an object in this image."
+                answer = f"Sure, it is {classesboxes2string(thing_classes, thing_boxes)}. There is an object in this image."
             else:
-                answer = f"Sure, it is {classes2string(thing_classes)}. There are {len(thing_classes)} objects in this image."
+                answer = f"Sure, it is {classesboxes2string(thing_classes, thing_boxes)}. There are {len(thing_classes)} objects in this image."
             cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt,
                                                                             cullavo_label=cullavo_label, 
                                                                             prompt=prompt,
@@ -177,48 +178,10 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                             device=device,
                                                                             ignore_index=self.config.ignore_index)
             # Rolling Dice
-            rolling_dice = torch.randint(high=4, low=0, size=(1,)).item()
+            rolling_dice = torch.randint(high=3, low=0, size=(1,)).item()
             if rolling_dice==0:
-                # IMAGE -> BOX
-                prompt = f"provide multiple coordinates of multiple bounding boxes corresponding multiple objects in this image."
-                if len(thing_classes)==1:
-                    answer = f"Sure, it is {classesboxes2string(thing_classes, thing_boxes)}. There is a bounding box in this image."
-                else:
-                    answer = f"Sure, it is {classesboxes2string(thing_classes, thing_boxes)}. There are {len(thing_classes)} bounding boxes in this image."
-                cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
-                                                                                cullavo_label=cullavo_label, 
-                                                                                prompt=prompt,
-                                                                                answer=answer,
-                                                                                processor=processor,
-                                                                                device=device,
-                                                                                ignore_index=self.config.ignore_index)
-            elif rolling_dice==1:
-                # CLASS -> BOX
-                # Class selection Rolling dice 
-                rolling_dice = torch.randint(high=len(unique_thing_class_ids), low=0, size=(1,)).item()
-                selected_class_id = unique_thing_class_ids[rolling_dice]
-                selected_class = unique_thing_classes[rolling_dice]
-                selected_index = torch.where(thing_class_ids==selected_class_id)
-                selected_classes = [thing_classes[i.item()] for i in selected_index[0]]
-                selected_boxes = thing_boxes[selected_index]
-
-                prompt = f"provide multiple coordinates of multiple bounding boxes corresponding {selected_class} in this image"
-                if len(selected_classes)==1:
-                    answer = f"Sure, it is {classesboxes2string(selected_classes, selected_boxes)}. There is a bounding box in this image."
-                else:
-                    answer = f"Sure, it is {classesboxes2string(selected_classes, selected_boxes)}. There are {len(selected_classes)} bounding boxes in this image."
-
-                cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
-                                                                                cullavo_label=cullavo_label, 
-                                                                                prompt=prompt,
-                                                                                answer=answer,
-                                                                                processor=processor,
-                                                                                device=device,
-                                                                                ignore_index=self.config.ignore_index)
-
-            elif rolling_dice==2:
                 # IMAGE -> COLOR
-                prompt = f"provide multiple colors for multiple bounding boxes in this image"
+                prompt = f"provide multiple bounding box colors in this image"
                 if len(_color_list[:len(thing_index_tensor)])==1:
                     answer = f"Sure, it is {list2string(_color_list[:len(thing_index_tensor)])} color. There is a bounding box in this image."
                 else:
@@ -231,7 +194,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                                 processor=processor,
                                                                                 device=device,
                                                                                 ignore_index=self.config.ignore_index)
-            elif rolling_dice==3:
+            elif rolling_dice==1:
                 # CLASS -> COLOR
                 # Class selection Rolling dice 
                 rolling_dice = torch.randint(high=len(unique_thing_class_ids), low=0, size=(1,)).item()
@@ -272,8 +235,8 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 rolling_dice = torch.randint(high=2, low=0, size=(1,)).item()
                 if rolling_dice == 0:
                     # Color -> BOX
-                    prompt = f"provide coordinate of {color} bounding box."
-                    answer = f"Sure, it is {box2string(box)}. There is a {color} bounding box"
+                    prompt = f"provide coordinate of {color} color bounding box."
+                    answer = f"Sure, it is {box2string(box)}. There is a {color} color bounding box"
                     cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
                                                                                     prompt=prompt,
@@ -321,86 +284,6 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                                     ignore_index=self.config.ignore_index)
                 else:
                     raise Exception("This is unexpected error")
-            
-            # Vision Grounding
-            if input['groundings']['mode']=='text':
-                
-                # TEXTS
-                grounding_texts = [str(x) for x in input['groundings']['texts']]
-
-                # Masks
-                grounding_masks = BitMasks(input['groundings']['masks'])
-                grounding_boxes = grounding_masks.get_bounding_boxes()
-                grounding_boxes.scale(1/W, 1/H)
-                
-                # IoU matching
-                matching_index = pairwise_iou(grounding_boxes, Boxes(thing_boxes.cpu())).argmax(dim=1)
-
-                # color
-                grounding_colors = [_color_list[m.item()] for m in matching_index] 
-
-                # Random shuffling
-                rand_int = torch.randperm(len(grounding_colors))[:fix_num]
-
-                # Making cullavo prompt
-                for r_int in rand_int:
-                    grd_box = grounding_boxes.tensor[r_int]
-                    grd_txt = grounding_texts[r_int]
-                    grd_color = grounding_colors[r_int]
-                    
-                    # Rolling dice 
-                    rolling_dice = torch.randint(high=2, low=0, size=(1,)).item()
-                    if rolling_dice==0:
-                        # TXT -> BOX
-                        prompt = f"provide a bounding box coordinate that represents the short description: {grd_txt}"
-                        answer = f"Sure, it is {box2string(grd_box)}."
-                        cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
-                                                                                        cullavo_label=cullavo_label, 
-                                                                                        prompt=prompt, 
-                                                                                        answer=answer, 
-                                                                                        processor=processor,
-                                                                                        device=device, 
-                                                                                        ignore_index=self.config.ignore_index)
-                    elif rolling_dice==1:
-                        # BOX -> TXT
-                        prompt = f"provide short description for bounding box coordinate {box2string(grd_box)}"
-                        answer = f"Sure, it is that {grd_txt}."
-                        cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
-                                                                                        cullavo_label=cullavo_label, 
-                                                                                        prompt=prompt, 
-                                                                                        answer=answer, 
-                                                                                        processor=processor,
-                                                                                        device=device, 
-                                                                                        ignore_index=self.config.ignore_index)
-                    else:
-                        raise Exception("This is unexpected error")
-                    
-                    # Rolling dice 
-                    rolling_dice = torch.randint(high=2, low=0, size=(1,)).item()
-                    if rolling_dice==0:
-                        # TXT -> COLOR
-                        prompt = f"provide a color of bounding box representing the short description: {grd_txt}"
-                        answer = f"Sure, it is {grd_color} color."
-                        cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
-                                                                                        cullavo_label=cullavo_label, 
-                                                                                        prompt=prompt, 
-                                                                                        answer=answer, 
-                                                                                        processor=processor,
-                                                                                        device=device, 
-                                                                                        ignore_index=self.config.ignore_index)
-                    elif rolling_dice==1:
-                        # COLOR -> TXT
-                        prompt = f"provide short description for {grd_color} bounding box"
-                        answer = f"Sure, it is that {grd_txt}."
-                        cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
-                                                                                        cullavo_label=cullavo_label, 
-                                                                                        prompt=prompt, 
-                                                                                        answer=answer, 
-                                                                                        processor=processor,
-                                                                                        device=device, 
-                                                                                        ignore_index=self.config.ignore_index)
-                    else:
-                        raise Exception("This is unexpected error")
             
             # making batched cullavo prompt
             batched_boxed_image.append(torch.from_numpy(boxed_image).permute(2, 0, 1).to(device))
