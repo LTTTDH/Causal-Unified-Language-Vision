@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 
 # VLP - Stage1 (Pretrained)
-GPU_DEVICE="1,2,3,4,5,6,7"
-main_ip="143.248.49.126"
+GPU_DEVICE="0,1,2,3,4,5,6"
+main_ip="143.248.49.62"
 main_port=11111
-machine_rank=1
+machine_rank=0
 n_mach=2
 length=${#GPU_DEVICE}
 n_gpu=$(((length+1)/2))
 n_proc=$((n_gpu*n_mach))
-image_bath=1
+image_bath=4
 test_batch=1
 
 # 143.248.49.62

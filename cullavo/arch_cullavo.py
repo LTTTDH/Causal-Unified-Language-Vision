@@ -178,7 +178,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                             device=device,
                                                                             ignore_index=self.config.ignore_index)
             # Rolling Dice
-            rolling_dice = torch.randint(high=3, low=0, size=(1,)).item()
+            rolling_dice = torch.randint(high=2, low=0, size=(1,)).item()
             if rolling_dice==0:
                 # IMAGE -> COLOR
                 prompt = f"provide multiple bounding box colors in this image"
