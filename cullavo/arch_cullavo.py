@@ -96,7 +96,6 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         inputs,
         processor,
         device,
-        fix_num=10
     ):
     
         # initialization
@@ -164,7 +163,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             cullavo_prompt, cullavo_label = self.make_system_prompt(processor, device, self.config.ignore_index)
             
             # IMAGE -> CLASS
-            prompt = f"provide multiple class names for multiple objects and their numbering index in this image."
+            prompt = f"provide multiple object names and their numbering index in this image."
             if len(thing_classes)==1:
                 answer = f"Sure, it is {classes2string(thing_classes)}. There is one object in this image."
             else:
@@ -177,7 +176,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                             device=device,
                                                                             ignore_index=self.config.ignore_index)
             # Rolling Dice
-            rolling_dice = torch.randint(high=2, low=0, size=(1,)).item()
+            rolling_dice = torch.randint(high=4, low=0, size=(1,)).item()
             if rolling_dice==0:
                 # IMAGE -> BOX
                 prompt = f"provide multiple coordinates of multiple bounding boxes corresponding multiple objects in this image."
@@ -192,7 +191,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                                 processor=processor,
                                                                                 device=device,
                                                                                 ignore_index=self.config.ignore_index)
-            elif rolling_dice == 1:
+            elif rolling_dice==1:
                 # CLASS -> BOX
                 # Class selection Rolling dice 
                 rolling_dice = torch.randint(high=len(unique_thing_class_ids), low=0, size=(1,)).item()
@@ -202,7 +201,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 selected_classes = [thing_classes[i.item()] for i in selected_index[0]]
                 selected_boxes = thing_boxes[selected_index]
 
-                prompt = f"provide multiple coordinates of multiple bounding boxes corresponding the class name of {selected_class} in this image"
+                prompt = f"provide multiple coordinates of multiple bounding boxes corresponding {selected_class} in this image"
                 if len(selected_classes)==1:
                     answer = f"Sure, it is {classesboxes2string(selected_classes, selected_boxes)}. There is one bounding box in this image."
                 else:
@@ -215,12 +214,8 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                                 processor=processor,
                                                                                 device=device,
                                                                                 ignore_index=self.config.ignore_index)
-            else:
-                raise Exception("WTF!")
 
-            # Rolling Dice
-            rolling_dice = torch.randint(high=2, low=0, size=(1,)).item()
-            if rolling_dice == 0:
+            elif rolling_dice==2:
                 # IMAGE -> COLOR
                 prompt = f"provide multiple colors for multiple bounding boxes in this image"
                 if len(_color_list[:len(thing_index_tensor)])==1:
@@ -235,7 +230,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                                 processor=processor,
                                                                                 device=device,
                                                                                 ignore_index=self.config.ignore_index)
-            elif rolling_dice == 1:
+            elif rolling_dice==3:
                 # CLASS -> COLOR
                 # Class selection Rolling dice 
                 rolling_dice = torch.randint(high=len(unique_thing_class_ids), low=0, size=(1,)).item()
@@ -246,7 +241,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 selected_boxes = thing_boxes[selected_index]
                 selected_colors = [_color_list[i.item()] for i in selected_index[0]]
 
-                prompt = f"provide multiple colors for multiple bounding boxes corresponding the class name of {selected_class} in this image"
+                prompt = f"provide multiple colors for multiple bounding boxes corresponding {selected_class} in this image"
                 if len(selected_classes)==1:
                     answer = f"Sure, it is {classescolors2string(selected_classes, selected_colors)} color. There is one bounding box in this image."
                 else:
@@ -260,10 +255,11 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                                 device=device,
                                                                                 ignore_index=self.config.ignore_index)
             else:
-                raise Exception("WTF!")
+                raise Exception("This is unexpected error")
+
 
             # Random shuffling
-            rand_int = torch.randperm(len(thing_boxes[:len(_color_list)]))[:fix_num]
+            rand_int = torch.randperm(len(thing_boxes[:len(_color_list)]))
 
             # Making cullavo prompt
             for r_int in rand_int:
@@ -297,12 +293,12 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                                     ignore_index=self.config.ignore_index)
                 else:
                     raise Exception("This is unexpected error")
-                
+            
                 # Rolling dice 
                 rolling_dice = torch.randint(high=2, low=0, size=(1,)).item()
                 if rolling_dice == 0:
                     # BOX -> CLASS
-                    prompt = f"provide one class name of object for bounding box coordinate {box2string(box)}."
+                    prompt = f"provide object name for bounding box coordinate {box2string(box)}."
                     answer = f"Sure, it is {cls}."
                     cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
@@ -313,7 +309,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                                     ignore_index=self.config.ignore_index)
                 elif rolling_dice == 1:
                     # COLOR -> CLASS
-                    prompt = f"provide one class name of object for {color} bounding box."
+                    prompt = f"provide object name for {color} bounding box."
                     answer = f"Sure, it is {cls}."
                     cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
@@ -324,7 +320,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                                     ignore_index=self.config.ignore_index)
                 else:
                     raise Exception("This is unexpected error")
-
+            
             # Vision Grounding
             if input['groundings']['mode']=='text':
                 
@@ -343,7 +339,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 grounding_colors = [_color_list[m.item()] for m in matching_index] 
 
                 # Random shuffling
-                rand_int = torch.randperm(len(grounding_colors))[:fix_num]
+                rand_int = torch.randperm(len(grounding_colors))
 
                 # Making cullavo prompt
                 for r_int in rand_int:

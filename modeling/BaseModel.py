@@ -34,14 +34,18 @@ class BaseModel(nn.Module):
 
         # LLM Save
         if self.opt['LLM']['LOAD_LLM']:
+            
+            # LLM Path
             llm_path = os.path.join(save_dir, f'epoch{epoch}', "cullavo")
+            llm_llm_path = os.path.join(save_dir, f'epoch{epoch}', "cullavo", "language_model")
+            llm_vision_path = os.path.join(save_dir, f'epoch{epoch}', "cullavo", "vision_tower")
             
             # Token parallel
             os.environ['TOKENIZERS_PARALLELISM']='false'
 
             # PEFT Language save
-            accel.unwrap_model(self.model.cullavo_model.language_model).save_pretrained(llm_path, is_main_process=accel.is_main_process, save_function=accel.save)
-            accel.unwrap_model(self.model.cullavo_processor).save_pretrained(llm_path, is_main_process=accel.is_main_process, save_function=accel.save)
+            accel.unwrap_model(self.model.cullavo_model.language_model).save_pretrained(llm_llm_path, is_main_process=accel.is_main_process, save_function=accel.save)
+            accel.unwrap_model(self.model.cullavo_model.vision_tower).save_pretrained(llm_vision_path, is_main_process=accel.is_main_process, save_function=accel.save)
             
             # Multi modal projector save
             multi_modal_projector_state_dict = {}
@@ -65,7 +69,7 @@ class BaseModel(nn.Module):
             os.environ['TOKENIZERS_PARALLELISM']='true'
 
     def from_pretrained(self, load_dir, accel):
-        if os.path.exists(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo')):
+        if os.path.exists(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', 'language_model')):
             
             def lora_generator(model):
                 for name, param in model.named_parameters():
@@ -73,7 +77,7 @@ class BaseModel(nn.Module):
                         yield (name, param)
 
             from safetensors import safe_open
-            with safe_open(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', 'adapter_model.safetensors'), framework="pt", device="cpu") as handle_f:
+            with safe_open(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', 'language_model', 'adapter_model.safetensors'), framework="pt", device="cpu") as handle_f:
                 for key in handle_f.keys():
                     if 'lora' in key:
                         ckpt_tensor = handle_f.get_tensor(key)
@@ -85,7 +89,26 @@ class BaseModel(nn.Module):
                                 break
                         if check == 0:
                             raise Exception("No!")
+        if os.path.exists(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', 'vision_tower')):
+            
+            def lora_generator(model):
+                for name, param in model.named_parameters():
+                    if 'lora' in name:
+                        yield (name, param)
 
+            from safetensors import safe_open
+            with safe_open(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', 'vision_tower', 'adapter_model.safetensors'), framework="pt", device="cpu") as handle_f:
+                for key in handle_f.keys():
+                    if 'lora' in key:
+                        ckpt_tensor = handle_f.get_tensor(key)
+                        check = 0
+                        for name, param in lora_generator(self.model.cullavo_model.vision_tower):
+                            if name==key:
+                                param.data = ckpt_tensor
+                                check = 1
+                                break
+                        if check == 0:
+                            raise Exception("No!")
             # LORA -> bfloat16 conversion 
             for param in self.model.cullavo_model.parameters():
                 if 'float32' in str(param.dtype).lower():
@@ -102,10 +125,6 @@ class BaseModel(nn.Module):
             # torch load for embed tokens
             embed_tokens_state_dict = torch.load(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', "embed_tokens.pt"), map_location=accel.device)
             embed_tokens_msg = self.model.cullavo_model.get_input_embeddings().load_state_dict(embed_tokens_state_dict)
-
-            # Freeze Parameter for Evaluating
-            self.model.cullavo_model = self.model.cullavo_model.eval()
-            for param in self.model.cullavo_model.parameters(): param.requires_grad_(False)
 
             # Verbose
             if accel.is_main_process: print(f'CuLLaVO Loaded!!: {load_dir}, {mm_proj_msg}, {lm_head_msg}, {embed_tokens_msg}')

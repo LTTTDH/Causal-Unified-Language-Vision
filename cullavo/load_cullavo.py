@@ -13,8 +13,10 @@ def find_all_linear_names(model):
             names = name.split('.')
             lora_module_names.add(names[0] if len(names) == 1 else names[-1])
 
-    if 'lm_head' in lora_module_names: # needed for 16-bit
+    if 'lm_head' in lora_module_names: # for LLM
         lora_module_names.remove('lm_head')
+    if 'out_proj' in lora_module_names: # for Vision
+        lora_module_names.remove('out_proj')
     return list(lora_module_names)
 
 def set_all_adapter(cullavo_model):
@@ -46,7 +48,7 @@ def prepare_cullavo(bits, grad_ckpt, lora):
             quantization_config=BitsAndBytesConfig(
                 load_in_4bit=bits == 4,
                 load_in_8bit=bits == 8,
-                llm_int8_skip_modules=["vision_tower", "multi_modal_projector", "lm_head"], # LM_HEAD: flash attention
+                llm_int8_skip_modules=["multi_modal_projector", "lm_head"], # LM_HEAD: flash attention
                 llm_int8_threshold=6.0,
                 llm_int8_has_fp16_weight=False,
                 bnb_4bit_compute_dtype=torch.bfloat16,
@@ -58,12 +60,22 @@ def prepare_cullavo(bits, grad_ckpt, lora):
     # LLaVA 8Bit compression
     cullavo_model = CuLLaVOModel.from_pretrained(LLAVA_LOCAL_PATH, **bnb_model_from_pretrained_args)
 
+    # LoRA for Language Model
     if bits in [4, 8] and lora:
         cullavo_model.language_model.config.use_cache = False
         cullavo_model = prepare_model_for_kbit_training(cullavo_model,
                                                         use_gradient_checkpointing=grad_ckpt,
                                                         gradient_checkpointing_kwargs={"use_reentrant": False})
-        lora_config = LoraConfig(
+        lora_vision_config = LoraConfig(
+            r=64,
+            lora_alpha=16,
+            target_modules=find_all_linear_names(cullavo_model.vision_tower),
+            lora_dropout=0.05,
+            bias='none',
+            task_type="CAUSAL_LM",
+            layers_to_transform=list(range(17, 23)),
+        )
+        lora_llm_config = LoraConfig(
             r=64,
             lora_alpha=16,
             target_modules=find_all_linear_names(cullavo_model.language_model),
@@ -71,7 +83,8 @@ def prepare_cullavo(bits, grad_ckpt, lora):
             bias='none',
             task_type="CAUSAL_LM",
         )
-        cullavo_model.language_model.add_adapter(lora_config, adapter_name='step1')
+        cullavo_model.vision_tower.add_adapter(lora_vision_config, adapter_name='step1')
+        cullavo_model.language_model.add_adapter(lora_llm_config, adapter_name='step1')
 
     elif bits in [4, 8] and not lora:
         raise Exception("training model with non-lora bits quantization is not worked")

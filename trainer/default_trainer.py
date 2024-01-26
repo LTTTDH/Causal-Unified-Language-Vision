@@ -62,8 +62,6 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
         if self.opt['WEIGHT'] and os.path.isfile(self.opt['RESUME_FROM']):
             model_path = self.opt['RESUME_FROM'] 
             self.load_model(model_path)
-        else:
-            raise ValueError(f"Model not found: {model_path}")
 
         results = self._eval_on_set()
         if self.accel.is_main_process: self.dictionary_display(results)

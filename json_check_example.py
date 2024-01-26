@@ -1,7 +1,7 @@
 import json
 import os
-root = '/mnt/ssd/lbk-cvpr/dataset/ShareGPT4V/data/'
-a = open('/mnt/ssd/lbk-cvpr/dataset/ShareGPT4V/data/sharegpt4v/sharegpt4v_mix665k_cap23k_coco-ap9k_lcs3k_sam9k_div2k.json', 'r')
+root = '/mnt/hard/lbk-cvpr/dataset/ShareGPT4V/data/'
+a = open('/mnt/hard/lbk-cvpr/dataset/ShareGPT4V/data/sharegpt4v/sharegpt4v_mix665k_cap23k_coco-ap9k_lcs3k_sam9k_div2k.json', 'r')
 object=json.load(a)
 
 total_num = 0
@@ -22,4 +22,7 @@ for obj in object:
         nonexists_num += 1
         nonexists_list.append(obj['image'])
 
+print(total_num)
+print(exists_num)
+print(nonexists_num)
 print('ok')
