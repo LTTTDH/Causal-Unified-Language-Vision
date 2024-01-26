@@ -36,66 +36,49 @@ class BaseModel(nn.Module):
         if self.opt['LLM']['LOAD_LLM']:
             
             # LLM Path
-            llm_path = os.path.join(save_dir, f'epoch{epoch}', "cullavo")
-            llm_llm_path = os.path.join(save_dir, f'epoch{epoch}', "cullavo", "language_model")
-            llm_vision_path = os.path.join(save_dir, f'epoch{epoch}', "cullavo", "vision_tower")
+            cullavo_path = os.path.join(save_dir, f'epoch{epoch}', "cullavo")
+            cullavo_vision_path = os.path.join(save_dir, f'epoch{epoch}', "cullavo", "vision_tower")
+            cullavo_llm_path = os.path.join(save_dir, f'epoch{epoch}', "cullavo", "language_model")
             
             # Token parallel
             os.environ['TOKENIZERS_PARALLELISM']='false'
 
             # PEFT Language save
-            accel.unwrap_model(self.model.cullavo_model.language_model).save_pretrained(llm_llm_path, is_main_process=accel.is_main_process, save_function=accel.save)
-            accel.unwrap_model(self.model.cullavo_model.vision_tower).save_pretrained(llm_vision_path, is_main_process=accel.is_main_process, save_function=accel.save)
+            accel.unwrap_model(self.model.cullavo_model.vision_tower).save_pretrained(cullavo_vision_path, is_main_process=accel.is_main_process, save_function=accel.save)
+            accel.unwrap_model(self.model.cullavo_model.language_model).save_pretrained(cullavo_llm_path, is_main_process=accel.is_main_process, save_function=accel.save)
             
             # Multi modal projector save
             multi_modal_projector_state_dict = {}
             for name, param in accel.unwrap_model(self.model.cullavo_model.multi_modal_projector).named_parameters():
                 multi_modal_projector_state_dict.update({name: param.detach().cpu().clone()})
-            if accel.is_main_process: torch.save(multi_modal_projector_state_dict, os.path.join(llm_path, "multi_modal_projector.pt"))
+            if accel.is_main_process: torch.save(multi_modal_projector_state_dict, os.path.join(cullavo_path, "multi_modal_projector.pt"))
 
             # lm head save
             lm_head_state_dict = {}
             for name, param in accel.unwrap_model(self.model.cullavo_model.language_model.lm_head).named_parameters():
                 lm_head_state_dict.update({name: param.detach().cpu().clone()})
-            if accel.is_main_process: torch.save(lm_head_state_dict, os.path.join(llm_path, "lm_head.pt"))
+            if accel.is_main_process: torch.save(lm_head_state_dict, os.path.join(cullavo_path, "lm_head.pt"))
 
             # word embedding save
             embed_tokens_state_dict = {}
             for name, param in accel.unwrap_model(self.model.cullavo_model.get_input_embeddings()).named_parameters():
                 embed_tokens_state_dict.update({name: param.detach().cpu().clone()})
-            if accel.is_main_process: torch.save(embed_tokens_state_dict, os.path.join(llm_path, "embed_tokens.pt"))
+            if accel.is_main_process: torch.save(embed_tokens_state_dict, os.path.join(cullavo_path, "embed_tokens.pt"))
 
             # Token parallel
             os.environ['TOKENIZERS_PARALLELISM']='true'
 
     def from_pretrained(self, load_dir, accel):
-        if os.path.exists(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', 'language_model')):
-            
+
+        # CoLLaVO
+        if os.path.exists(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo')):
+
             def lora_generator(model):
                 for name, param in model.named_parameters():
                     if 'lora' in name:
                         yield (name, param)
 
-            from safetensors import safe_open
-            with safe_open(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', 'language_model', 'adapter_model.safetensors'), framework="pt", device="cpu") as handle_f:
-                for key in handle_f.keys():
-                    if 'lora' in key:
-                        ckpt_tensor = handle_f.get_tensor(key)
-                        check = 0
-                        for name, param in lora_generator(self.model.cullavo_model.language_model):
-                            if name==key:
-                                param.data = ckpt_tensor
-                                check = 1
-                                break
-                        if check == 0:
-                            raise Exception("No!")
-        if os.path.exists(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', 'vision_tower')):
-            
-            def lora_generator(model):
-                for name, param in model.named_parameters():
-                    if 'lora' in name:
-                        yield (name, param)
-
+            # Vision
             from safetensors import safe_open
             with safe_open(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', 'vision_tower', 'adapter_model.safetensors'), framework="pt", device="cpu") as handle_f:
                 for key in handle_f.keys():
@@ -109,6 +92,21 @@ class BaseModel(nn.Module):
                                 break
                         if check == 0:
                             raise Exception("No!")
+            # LLM
+            from safetensors import safe_open
+            with safe_open(os.path.join("/".join(load_dir.split('/')[:-1]), 'cullavo', 'language_model', 'adapter_model.safetensors'), framework="pt", device="cpu") as handle_f:
+                for key in handle_f.keys():
+                    if 'lora' in key:
+                        ckpt_tensor = handle_f.get_tensor(key)
+                        check = 0
+                        for name, param in lora_generator(self.model.cullavo_model.language_model):
+                            if name==key:
+                                param.data = ckpt_tensor
+                                check = 1
+                                break
+                        if check == 0:
+                            raise Exception("No!")
+
             # LORA -> bfloat16 conversion 
             for param in self.model.cullavo_model.parameters():
                 if 'float32' in str(param.dtype).lower():
