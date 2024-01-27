@@ -6,7 +6,7 @@ from .build import register_model
 from ..utils import configurable
 
 # CuLLaVO
-from cullavo.load_cullavo import prepare_cullavo, add_adapter_step2
+from cullavo.load_cullavo import prepare_cullavo, add_adapter_for_step2
 
 class CuLLaVO(nn.Module):
 
@@ -32,7 +32,7 @@ class CuLLaVO(nn.Module):
                                                                grad_ckpt=cfg['LLM']['GRAD_CKPT'],
                                                                lora=cfg['LLM']['LORA'])
             # CuLLaVO
-            if cfg['NAME'] == 'cullavo_step2.yaml': add_adapter_step2(cullavo_model)
+            if cfg['NAME'] == 'cullavo_step2.yaml': add_adapter_for_step2(cullavo_model)
         else:
             cullavo_model, cullavo_processor = None, None
 
@@ -41,10 +41,6 @@ class CuLLaVO(nn.Module):
             "cullavo_model": cullavo_model, # CuLLaVO
             "cullavo_processor": cullavo_processor, # CuLLaVO
             }
-
-    @property
-    def device(self):
-        return self.pixel_mean.device
 
     def forward(self, batched_inputs, accel, mode=None):
         if self.training:
@@ -95,8 +91,8 @@ class CuLLaVO(nn.Module):
         interpolated_images = torch.cat(interp_image_list, dim=0)
 
         # CuLLaVO: llm preparation
-        cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
-                                                         prompt=f"provide multiple object names and their numbering index in this image.", 
+        cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[1], 
+                                                         prompt=f"provide multiple object names with their numbering index and the objects' bounding box coordinates in this image.", 
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
         cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
@@ -108,11 +104,11 @@ class CuLLaVO(nn.Module):
                                                          prompt=f"provide multiple bounding box coordinates corresponding window in this image.", 
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
-        cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[1], 
-                                                         prompt=f"provide multiple coordinates of multiple bounding boxes corresponding bear in this image", 
+        cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[2], 
+                                                         prompt=f"provide multiple coordinates of multiple bounding boxes corresponding bed in this image", 
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
-        cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
+        cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[2], 
                                                          prompt=f"Is there any red bounding box in this image?", 
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
@@ -121,42 +117,49 @@ class CuLLaVO(nn.Module):
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
         cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[2], 
-                                                         prompt=f"provide object name for bounding box coordinate [0.311, 0.096, 0.699, 0.561]", 
+                                                         prompt=f"provide object name for bounding box coordinate [0.000, 0.580, 0.607, 1.000]", 
+                                                         processor=self.cullavo_processor, 
+                                                         device=accel.device)
+        cullavo_inputs = self.cullavo_model.eval_process(images=torch.from_numpy(out).permute(2,0,1), 
+                                                         prompt=f"provide multiple bounding box colors in this image",
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
         
         filt = "Sure, it is person (#1), refrigerator (#1), couch (#1), tv (#1), potted plant (#1), potted plant (#2), vase (#1). There are 7 objects in this image."
 
-        with torch.inference_mode():
-            generate_ids = self.cullavo_model.generate(**cullavo_inputs, do_sample=True, temperature=0.9, max_new_tokens=100, use_cache=True)
-        decoded_text = self.cullavo_processor.batch_decode(generate_ids, skip_special_tokens=True)[0]
-        
 
-        # Automation process
         i=0
         # CuLLaVO: llm preparation
         cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[i], 
-                                                         prompt=f"provide multiple object names and their numbering index in this image.", 
+                                                         prompt=f"provide multiple object names with their numbering index and the objects' bounding box coordinates in this image.", 
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
-        with torch.inference_mode():
-            generate_ids = self.cullavo_model.generate(**cullavo_inputs, do_sample=True, temperature=0.9, top_k=50, top_p=0.95, max_new_tokens=100, use_cache=True)
-        decoded_text = self.cullavo_processor.batch_decode(generate_ids, skip_special_tokens=True)[0]
-        
-        cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[i], 
-                                                         prompt="provide multiple coordinates of multiple bounding boxes corresponding multiple objects in this image.", 
-                                                         aux_prompt='USER: '+decoded_text.split('USER: ')[1],
-                                                         processor=self.cullavo_processor, 
-                                                         device=accel.device)
+
+
         with torch.inference_mode():
             generate_ids = self.cullavo_model.generate(**cullavo_inputs, do_sample=True, temperature=0.9, top_k=50, top_p=0.95, max_new_tokens=1000, use_cache=True)
         decoded_text = self.cullavo_processor.batch_decode(generate_ids, skip_special_tokens=True)[0]
+        
+
+        # finding
+        def find(s, ch):
+            return [i for i, ltr in enumerate(s) if ltr == ch]
+        start_index = find(decoded_text, '[')
+        end_index = find(decoded_text, ']')
+
+        # box parsing
+        box_list = []
+        assert len(start_index) == len(end_index)
+        for s, e in zip(start_index, end_index):
+            box_list.append(eval(decoded_text[s: e+1]))
+        box_tensor = torch.tensor(box_list)
 
         # BOX visualizer
+        from cullavo.utils.utils import color_list
         from detectron2.utils.visualizer import Visualizer
         img = interpolated_images[i].permute(1,2,0).cpu().numpy()
         vis = Visualizer(img)
-        out = vis.draw_box(torch.tensor([0.745, 0.292, 1.000, 0.666])*336, alpha=1, edge_color='blue').get_image()
+        out = vis.overlay_instances(boxes=box_tensor*336, assigned_colors=color_list[:box_tensor.shape[0]], alpha=1).get_image()
 
 
         # CuLLaVO 

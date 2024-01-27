@@ -3,6 +3,7 @@ import random
 import torch.nn as nn
 from copy import deepcopy
 from .utils.utils import *
+import torch.nn.functional as F
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 from transformers.utils.generic import ModelOutput
@@ -223,7 +224,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
 
 
             # Random shuffling
-            rand_int = torch.randperm(len(thing_boxes[:len(_color_list)]))[:fix_num]
+            rand_int = torch.randperm(len(thing_boxes))[:fix_num]
 
             # Making cullavo prompt
             for r_int in rand_int:
@@ -235,7 +236,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 rolling_dice = torch.randint(high=2, low=0, size=(1,)).item()
                 if rolling_dice == 0:
                     # Color -> BOX
-                    prompt = f"provide coordinate of {color} color bounding box."
+                    prompt = f"provide a bounding box coordinate of {color} color bounding box."
                     answer = f"Sure, it is {box2string(box)}. There is a {color} color bounding box"
                     cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
@@ -246,7 +247,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                                     ignore_index=self.config.ignore_index)
                 elif rolling_dice == 1:
                     # BOX -> Color
-                    prompt = f"provide a color of bounding box coordinate {box2string(box)}."
+                    prompt = f"provide a bouding box color of bounding box coordinate {box2string(box)}."
                     answer = f"Sure, it is {color} color."
                     cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
@@ -328,28 +329,47 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                         processor, 
                         device):
 
-        images_list = []
+        # new json list
+        new_json_list = []
         for batch in batched_inputs:
-            # image append
-            images_list.append(batch['image'])
-                        
-            # make prompt and answer
-            new_json_list = []
-            for k in range(len(batch['question'])//2):
 
-                cullavo_inputs = self.eval_process(images=batch['image'], 
-                                                    prompt=batch['question'][2*k]['value'] if k!=0 else batch['question'][2*k]['value'].replace('<image>', '').strip(), 
-                                                    processor=processor, 
-                                                    device=device)
+            if not 'image' in batch.keys():
+                new_json_list.append({'id': batch['question_id'], 'conversations': batch['question']})
+
+
+            # interpolation
+            interp_image = F.interpolate(batch['image'].unsqueeze(0), size=(336,336)).squeeze(0)
                     
-                # CuLLaVO: llm preparation for Generation
-                self.language_model.set_adapter(["step1"])
-                with torch.inference_mode():
-                    generate_ids = self.generate(**cullavo_inputs, do_sample=False, temperature=0, max_new_tokens=30, use_cache=True)
-                decoded_text = processor.batch_decode(generate_ids, skip_special_tokens=True)[0].split('ASSISTANT:')[-1].strip()
+            # CuLLaVO: llm preparation
+            cullavo_inputs = self.eval_process(images=interp_image, 
+                                            prompt=f"provide multiple object names with their numbering index and the objects' bounding box coordinates in this image.", 
+                                            processor=processor, 
+                                            device=device)
+            # Generation
+            with torch.inference_mode():
+                generate_ids = self.generate(**cullavo_inputs, do_sample=True, temperature=0.9, top_k=50, top_p=0.95, max_new_tokens=1000, use_cache=True)
+            decoded_text = processor.batch_decode(generate_ids, skip_special_tokens=True)[0]
+            
+            # Box parsing
+            box_tensor, box_flag = box_parser(decoded_text)
+
+            # Class parsing
+            class_list, class_flag = class_parser(decoded_text)
+
+            # TRY-EXECPTION HANDLING
+            if box_flag + class_flag: continue
+
+            # Visualize
+            # img = interp_image.permute(1,2,0).cpu().numpy()
+            # vis = Visualizer(img)
+            # vis._default_font_size = 4
+            # out = vis.overlay_instances(boxes=box_tensor*336,
+            #                             labels=class_list, 
+            #                             assigned_colors=color_list[:box_tensor.shape[0]],
+            #                             alpha=1).get_image()
 
             # making new json for CuLLaVO Dataset
-            new_json_list.append({'id': batch['question_id'], 'image': batch['image_id'], 'conversations': batch['question']})
+            new_json_list.append({'id': batch['question_id'], 'image': batch['image_id'], 'conversations': batch['question'], 'boxes': box_tensor.cpu().tolist(), 'classes': class_list})
 
         return new_json_list
 

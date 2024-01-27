@@ -117,7 +117,7 @@ class ShareGPTDatasetMapper:
             utils.check_image_size(dataset_dict, image)
             image, transforms = T.apply_transform_gens(self.tfm_gens, image)
 
-            dataset_dict["image"] = torch.from_numpy(np.numpy(image.transpose(2, 0, 1)))
+            dataset_dict["image"] = torch.tensor(image.transpose(2, 0, 1))
         # else:
         #     dataset_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
 

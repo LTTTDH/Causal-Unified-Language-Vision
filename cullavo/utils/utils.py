@@ -1,3 +1,5 @@
+import torch
+
 ROOT_PATH = "/mnt/hard/lbk-cvpr/checkpoints/"
 BAKLLAVA_LOCAL_PATH = ROOT_PATH + "huggingface/hub/models--llava-hf--bakLlava-v1-hf/snapshots/f038f156966ff4d24078b260e9e9761fd480d325"
 LLAVA_LOCAL_PATH = ROOT_PATH + "huggingface/hub/models--llava-hf--llava-1.5-7b-hf/snapshots/6b7135519bd7a7f93a03c1f8ddae0ce9dfa1a7af"
@@ -41,6 +43,32 @@ color_list = ['white',
 #             'gray', 
 #             'black']
 
+def box_parser(decoded_text):
+    start_box_index = find(decoded_text, '[')
+    end_box_index = find(decoded_text, ']')
+    
+    if len(start_box_index) != len(end_box_index): return None, True
+
+    box_list = []
+    for s, e in zip(start_box_index, end_box_index):
+        box_list.append(eval(decoded_text[s: e+1]))
+    box_tensor = torch.tensor(box_list)
+    return box_tensor, False
+
+def class_parser(decoded_text):
+    start_class_index = find(decoded_text, '(')
+    end_class_index = find(decoded_text, ')')
+
+    if len(start_class_index) != len(end_class_index): return None, True
+
+    class_list = []
+    for s, e in zip(start_class_index, end_class_index):
+        class_list.append(decoded_text[s+1: e].split(' #')[0])
+    return class_list, False
+
+def find(s, ch):
+    return [i for i, ltr in enumerate(s) if ltr == ch]
+
 def list2string(_list):
     out = ''
     for i, x in enumerate(_list):
@@ -58,10 +86,11 @@ def box2string(box):
     return out
 
 def boxes2string(boxes):
-    out = ''
+    out = '['
     for i, x in enumerate(boxes):
         out+=box2string(x)
         if i!=len(boxes)-1: out+=', '
+    out += ']'
     return out
 
 def classescolors2string(classes, colors):

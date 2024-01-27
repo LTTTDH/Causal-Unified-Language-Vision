@@ -19,11 +19,18 @@ def find_all_linear_names(model):
         lora_module_names.remove('out_proj')
     return list(lora_module_names)
 
-def set_all_adapter(cullavo_model):
-    cullavo_model.language_model.set_adapter(['step1', 'step2'])
 
-def add_adapter_step2(cullavo_model):
-    lora_config = LoraConfig(
+def add_adapter_for_step2(cullavo_model):
+    lora_vision_config = LoraConfig(
+        r=64,
+        lora_alpha=16,
+        target_modules=['k_proj', 'q_proj', 'up_proj', 'v_proj', 'o_proj', 'down_proj', 'gate_proj'],
+        lora_dropout=0.05,
+        bias='none',
+        task_type="CAUSAL_LM",
+        layers_to_transform=list(range(12, 23)),
+    )
+    lora_llm_config = LoraConfig(
         r=64,
         lora_alpha=16,
         target_modules=['k_proj', 'q_proj', 'up_proj', 'v_proj', 'o_proj', 'down_proj', 'gate_proj'],
@@ -31,8 +38,8 @@ def add_adapter_step2(cullavo_model):
         bias='none',
         task_type="CAUSAL_LM",
     )
-    cullavo_model.language_model.add_adapter(lora_config, adapter_name='step2')
-    cullavo_model.language_model.set_adapter("step2")
+    cullavo_model.vision_tower.add_adapter(lora_vision_config, adapter_name='step2')
+    cullavo_model.language_model.add_adapter(lora_llm_config, adapter_name='step2')
 
 
 def prepare_cullavo(bits, grad_ckpt, lora):

@@ -18,6 +18,7 @@ from modeling import build_model
 from modeling.BaseModel import BaseModel
 from datasets import build_eval_dataloader, build_train_dataloader
 from trainer.utils.misc import move_batch_to_device
+import torch.distributed as dist
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,12 @@ class CuLLaVOPipeline:
             steps_update = steps_total // steps_acc
             self._opt["LR_SCHEDULER_PARAMS"]["steps_update_per_epoch"] = steps_update
         return dataloader
+
+    @staticmethod
+    def all_gather(data, world_size):
+        output = [None for _ in range(world_size)]
+        dist.all_gather_object(output, data, group=None)
+        return output
 
     @staticmethod
     def forward_func(trainer, batch):
@@ -113,8 +120,15 @@ class CuLLaVOPipeline:
                     new_json_list = model(batch, accel=trainer.accel)
                     new_json_dict_list_extend.extend(new_json_list)
 
+                    if idx == 0: break
+        trainer.accel.wait_for_everyone()
+        if self._opt['world_size'] > 1:
+            temp = self.all_gather(new_json_dict_list_extend, self._opt['world_size'])
+            new_json_dict_list_extend = [] 
+            for t in temp: new_json_dict_list_extend += t
+
         # New Dataset
-        with open("/mnt/ssd/lbk-cvpr/dataset/ShareGPT4V/data/sharegpt4v/lbk.json", "a") as f:
+        with open("/mnt/hard/lbk-cvpr/dataset/ShareGPT4V/data/sharegpt4v/lbk.json", "w") as f:
             json.dump(new_json_dict_list_extend, f)
 
         return scores
