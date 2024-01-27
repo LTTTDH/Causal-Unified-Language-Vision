@@ -49,8 +49,6 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
 
 
     def eval(self):
-        logger.info('-----------------------------------------------')
-        logger.info("Evaluating model ... ")
         self.mode = "eval"
 
         self.model = self.pipeline.initialize_model()

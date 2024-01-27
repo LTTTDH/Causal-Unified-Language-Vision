@@ -335,41 +335,50 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
 
             if not 'image' in batch.keys():
                 new_json_list.append({'id': batch['question_id'], 'conversations': batch['question']})
+                continue
+
+            # Rolling dice 
+            rolling_dice = torch.randint(high=50, low=0, size=(1,)).item()
+            if rolling_dice==0:
+                        
+                # CuLLaVO: llm preparation
+                cullavo_inputs = self.eval_process(images=batch['image'], 
+                                                prompt=f"provide multiple object names with their numbering index and the objects' bounding box coordinates in this image.", 
+                                                processor=processor, 
+                                                device=device)
+                # Generation
+                with torch.inference_mode():
+                    generate_ids = self.generate(**cullavo_inputs, do_sample=True, temperature=0.9, top_k=50, top_p=0.95, max_new_tokens=1000, use_cache=True)
+                decoded_text = processor.batch_decode(generate_ids, skip_special_tokens=True)[0]
+                
+                # TRY-EXECPTION HANDLING
+                try:
+                    # Box and class parsing
+                    box_tensor, class_list, flag = box_and_class_parser(decoded_text)
+
+                    # TRY-EXECPTION HANDLING
+                    if flag: continue
 
 
-            # interpolation
-            interp_image = F.interpolate(batch['image'].unsqueeze(0), size=(336,336)).squeeze(0)
+                    # Visualize and Save
+                    vis = Visualizer(batch['image'].permute(1,2,0).cpu().numpy())
+                    out = vis.overlay_instances(boxes=box_tensor*336,
+                                                labels=class_list, 
+                                                assigned_colors=color_list[:box_tensor.shape[0]],
+                                                alpha=1).get_image()
+                    from PIL import Image
+                    im = Image.fromarray(out)
+                    im.save(f"/mnt/hard/lbk-cvpr/dataset/ShareGPT4V/data/sharegpt4v/images/{batch['question_id']}.png")
+
+                    # making new json for CuLLaVO Dataset
+                    new_json_list.append({'id': batch['question_id'], 'image': batch['image_id'], 'conversations': batch['question'], 'boxes': box_tensor.cpu().tolist(), 'classes': class_list})
+                except:
                     
-            # CuLLaVO: llm preparation
-            cullavo_inputs = self.eval_process(images=interp_image, 
-                                            prompt=f"provide multiple object names with their numbering index and the objects' bounding box coordinates in this image.", 
-                                            processor=processor, 
-                                            device=device)
-            # Generation
-            with torch.inference_mode():
-                generate_ids = self.generate(**cullavo_inputs, do_sample=True, temperature=0.9, top_k=50, top_p=0.95, max_new_tokens=1000, use_cache=True)
-            decoded_text = processor.batch_decode(generate_ids, skip_special_tokens=True)[0]
-            
-            # Box parsing
-            box_tensor, box_flag = box_parser(decoded_text)
+                    new_json_list.append({'id': batch['question_id'], 'image': batch['image_id'], 'conversations': batch['question']})
 
-            # Class parsing
-            class_list, class_flag = class_parser(decoded_text)
 
-            # TRY-EXECPTION HANDLING
-            if box_flag + class_flag: continue
-
-            # Visualize
-            # img = interp_image.permute(1,2,0).cpu().numpy()
-            # vis = Visualizer(img)
-            # vis._default_font_size = 4
-            # out = vis.overlay_instances(boxes=box_tensor*336,
-            #                             labels=class_list, 
-            #                             assigned_colors=color_list[:box_tensor.shape[0]],
-            #                             alpha=1).get_image()
-
-            # making new json for CuLLaVO Dataset
-            new_json_list.append({'id': batch['question_id'], 'image': batch['image_id'], 'conversations': batch['question'], 'boxes': box_tensor.cpu().tolist(), 'classes': class_list})
+            else:
+                new_json_list.append({'id': batch['question_id'], 'image': batch['image_id'], 'conversations': batch['question']})
 
         return new_json_list
 

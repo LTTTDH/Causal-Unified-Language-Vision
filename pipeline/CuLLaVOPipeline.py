@@ -120,7 +120,6 @@ class CuLLaVOPipeline:
                     new_json_list = model(batch, accel=trainer.accel)
                     new_json_dict_list_extend.extend(new_json_list)
 
-                    if idx == 0: break
         trainer.accel.wait_for_everyone()
         if self._opt['world_size'] > 1:
             temp = self.all_gather(new_json_dict_list_extend, self._opt['world_size'])
