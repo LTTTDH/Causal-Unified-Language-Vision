@@ -119,6 +119,7 @@ class CuLLaVOPipeline:
                     batch = move_batch_to_device(batch, trainer.accel.device)
                     new_json_list = model(batch, accel=trainer.accel)
                     new_json_dict_list_extend.extend(new_json_list)
+                    trainer.accel.wait_for_everyone()
 
         trainer.accel.wait_for_everyone()
         if self._opt['world_size'] > 1:

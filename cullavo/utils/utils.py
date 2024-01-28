@@ -58,7 +58,7 @@ def box_and_class_parser(decoded_text):
     class_list = []
     for sb, eb, sc, ec in zip(start_box_index, end_box_index, start_class_index, end_class_index):
         box_list.append(eval(decoded_text[sb: eb+1]))
-        class_list.append(decoded_text[sc+1: ec].split(' #')[0])
+        class_list.append(decoded_text[sc+1: ec].split(' ')[-1])
         if len(box_list[-1]) != 4: box_list.pop(-1); class_list.pop(-1)
     box_tensor = torch.tensor(box_list)
     return box_tensor, class_list, False
@@ -98,7 +98,7 @@ def classescolors2string(classes, colors):
             count[x]+=1
         else:
             count.update({x: 1})
-        out+=f"({x} #{count[x]}) {y}"
+        out+=f"(#{count[x]} {x}) {y}"
         if i!=len(classes)-1: out+=', '
     return out
 
@@ -111,7 +111,7 @@ def classesboxes2string(classes, boxes):
             count[x]+=1
         else:
             count.update({x: 1})
-        out+=f"({x} #{count[x]}) {box2string(y)}"
+        out+=f"(#{count[x]} {x}) {box2string(y)}"
         if i!=len(classes)-1: out+=', '
     return out
 

@@ -98,7 +98,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         inputs,
         processor,
         device,
-        fix_num=10
+        fix_num=5
     ):
     
         # initialization
@@ -121,16 +121,6 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
 
         # shuffle color_list
         random.shuffle(_color_list)
-
-        # Drawing BBox & Seg
-        # import numpy as np
-        # from utils.constants import COCO_PANOPTIC_CLASSES
-        # from detectron2.utils.visualizer import Visualizer
-        # img = inputs[0]['image'].permute(1,2,0).cpu().numpy()
-        # vis = Visualizer(inputs[0]['image'].permute(1,2,0).cpu().numpy())
-        # out = vis.overlay_instances(boxes=inputs[0]['instances'].gt_boxes.tensor.cpu()).get_image()
-        #                             masks=inputs[0]['instances'].gt_masks,
-        #                             labels=[COCO_PANOPTIC_CLASSES[c] for c in inputs[0]['instances'].gt_classes]).get_image()
         
         batched_boxed_image=[]
         batched_cullavo_prompt=[]
@@ -157,7 +147,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
 
             # BOX Image
             vis = Visualizer(input['image'].cpu().permute(1,2,0))
-            vis._default_font_size = 4 # box edge font
+            vis._default_font_size = 16 # box edge font
             boxed_image = vis.overlay_instances(boxes=(thing_boxes*H).cpu().numpy(),
                                                 assigned_colors=_color_list[:len(thing_index_tensor)],
                                                 alpha=1).get_image()
@@ -166,12 +156,27 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             cullavo_prompt, cullavo_label = self.make_system_prompt(processor, device, self.config.ignore_index)
             
             # IMAGE -> CLASS, BOX
-            prompt = f"provide multiple object names with their numbering index and the objects' bounding box coordinates in this image."
+            prompt = f"provide multiple object names with their numbering index and the objects' bounding box coordinates in the image."
             if len(thing_classes)==1:
-                answer = f"Sure, it is {classesboxes2string(thing_classes, thing_boxes)}. There is an object in this image."
+                answer = f"Sure, it is {classesboxes2string(thing_classes, thing_boxes)}. There is an object in the image."
             else:
-                answer = f"Sure, it is {classesboxes2string(thing_classes, thing_boxes)}. There are {len(thing_classes)} objects in this image."
+                answer = f"Sure, it is {classesboxes2string(thing_classes, thing_boxes)}. There are {len(thing_classes)} objects in the image."
             cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt,
+                                                                            cullavo_label=cullavo_label, 
+                                                                            prompt=prompt,
+                                                                            answer=answer,
+                                                                            processor=processor,
+                                                                            device=device,
+                                                                            ignore_index=self.config.ignore_index)
+            
+            # IMAGE -> COLOR
+            prompt = f"provide multiple bounding box colors in the image."
+            if len(_color_list[:len(thing_index_tensor)])==1:
+                answer = f"Sure, it is {list2string(_color_list[:len(thing_index_tensor)])} color. There is a bounding box in the image."
+            else:
+                answer = f"Sure, it is {list2string(_color_list[:len(thing_index_tensor)])} color. There are {len(_color_list[:len(thing_index_tensor)])} bounding boxes in the image."
+
+            cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                             cullavo_label=cullavo_label, 
                                                                             prompt=prompt,
                                                                             answer=answer,
@@ -181,21 +186,6 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
             # Rolling Dice
             rolling_dice = torch.randint(high=2, low=0, size=(1,)).item()
             if rolling_dice==0:
-                # IMAGE -> COLOR
-                prompt = f"provide multiple bounding box colors in this image"
-                if len(_color_list[:len(thing_index_tensor)])==1:
-                    answer = f"Sure, it is {list2string(_color_list[:len(thing_index_tensor)])} color. There is a bounding box in this image."
-                else:
-                    answer = f"Sure, it is {list2string(_color_list[:len(thing_index_tensor)])} color. There are {len(_color_list[:len(thing_index_tensor)])} bounding boxes in this image."
-
-                cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
-                                                                                cullavo_label=cullavo_label, 
-                                                                                prompt=prompt,
-                                                                                answer=answer,
-                                                                                processor=processor,
-                                                                                device=device,
-                                                                                ignore_index=self.config.ignore_index)
-            elif rolling_dice==1:
                 # CLASS -> COLOR
                 # Class selection Rolling dice 
                 rolling_dice = torch.randint(high=len(unique_thing_class_ids), low=0, size=(1,)).item()
@@ -206,11 +196,35 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 selected_boxes = thing_boxes[selected_index]
                 selected_colors = [_color_list[i.item()] for i in selected_index[0]]
 
-                prompt = f"provide multiple colors for multiple bounding boxes corresponding {selected_class} in this image"
+                prompt = f"provide multiple bounding box colors corresponding {selected_class} in the image."
                 if len(selected_classes)==1:
-                    answer = f"Sure, it is {classescolors2string(selected_classes, selected_colors)} color. There is a bounding box in this image."
+                    answer = f"Sure, it is {classescolors2string(selected_classes, selected_colors)} color. There is a bounding box in the image."
                 else:
-                    answer = f"Sure, it is {classescolors2string(selected_classes, selected_colors)} color. There are {len(selected_classes)} bounding boxes in this image."
+                    answer = f"Sure, it is {classescolors2string(selected_classes, selected_colors)} color. There are {len(selected_classes)} bounding boxes in the image."
+
+                cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                                                                                cullavo_label=cullavo_label, 
+                                                                                prompt=prompt,
+                                                                                answer=answer,
+                                                                                processor=processor,
+                                                                                device=device,
+                                                                                ignore_index=self.config.ignore_index)
+            elif rolling_dice==1:
+                # CLASS -> BOX
+                # Class selection Rolling dice 
+                rolling_dice = torch.randint(high=len(unique_thing_class_ids), low=0, size=(1,)).item()
+                selected_class_id = unique_thing_class_ids[rolling_dice]
+                selected_class = unique_thing_classes[rolling_dice]
+                selected_index = torch.where(thing_class_ids==selected_class_id)
+                selected_classes = [thing_classes[i.item()] for i in selected_index[0]]
+                selected_boxes = thing_boxes[selected_index]
+                selected_colors = [_color_list[i.item()] for i in selected_index[0]]
+
+                prompt = f"provide multiple bounding box coordinates for {selected_class} in the image."
+                if len(selected_classes)==1:
+                    answer = f"Sure, it is {classesboxes2string(selected_classes, selected_boxes)} color. There is a bounding box in the image."
+                else:
+                    answer = f"Sure, it is {classesboxes2string(selected_classes, selected_boxes)} color. There are {len(selected_classes)} bounding boxes in the image."
 
                 cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                 cullavo_label=cullavo_label, 
@@ -236,8 +250,8 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 rolling_dice = torch.randint(high=2, low=0, size=(1,)).item()
                 if rolling_dice == 0:
                     # Color -> BOX
-                    prompt = f"provide a bounding box coordinate of {color} color bounding box."
-                    answer = f"Sure, it is {box2string(box)}. There is a {color} color bounding box"
+                    prompt = f"provide a bounding box coordinate of {color} bounding box color."
+                    answer = f"Sure, it is {box2string(box)}. There is a {color} bounding box color"
                     cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
                                                                                     prompt=prompt,
@@ -263,7 +277,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 rolling_dice = torch.randint(high=2, low=0, size=(1,)).item()
                 if rolling_dice == 0:
                     # BOX -> CLASS
-                    prompt = f"provide object name for bounding box coordinate {box2string(box)}."
+                    prompt = f"provide an object name for bounding box coordinate {box2string(box)}."
                     answer = f"Sure, it is {cls}."
                     cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
@@ -274,7 +288,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                                     ignore_index=self.config.ignore_index)
                 elif rolling_dice == 1:
                     # COLOR -> CLASS
-                    prompt = f"provide object name for {color} bounding box."
+                    prompt = f"provide an object name for {color} bounding box."
                     answer = f"Sure, it is {cls}."
                     cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 
@@ -343,7 +357,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                         
                 # CuLLaVO: llm preparation
                 cullavo_inputs = self.eval_process(images=batch['image'], 
-                                                prompt=f"provide multiple object names with their numbering index and the objects' bounding box coordinates in this image.", 
+                                                prompt=f"provide multiple object names with their numbering index and the objects' bounding box coordinates in the image.", 
                                                 processor=processor, 
                                                 device=device)
                 # Generation
@@ -359,10 +373,9 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                     # TRY-EXECPTION HANDLING
                     if flag: continue
 
-
                     # Visualize and Save
                     vis = Visualizer(batch['image'].permute(1,2,0).cpu().numpy())
-                    out = vis.overlay_instances(boxes=box_tensor*336,
+                    out = vis.overlay_instances(boxes=box_tensor[:len(color_list)]*336,
                                                 labels=class_list, 
                                                 assigned_colors=color_list[:box_tensor.shape[0]],
                                                 alpha=1).get_image()
@@ -375,8 +388,6 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                 except:
                     
                     new_json_list.append({'id': batch['question_id'], 'image': batch['image_id'], 'conversations': batch['question']})
-
-
             else:
                 new_json_list.append({'id': batch['question_id'], 'image': batch['image_id'], 'conversations': batch['question']})
 
@@ -421,7 +432,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
 
             # CuLLaVO: llm preparation for Generation
             # cullavo_inputs = self.eval_process(images=batch['image'], 
-            #                                     prompt="provide the name of objects in this image", 
+            #                                     prompt="provide the name of objects in the image", 
             #                                     processor=processor, 
             #                                     device=device)
             

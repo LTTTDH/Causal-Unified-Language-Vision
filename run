@@ -1,49 +1,49 @@
 #!/usr/bin/env bash
 
 # Stage1 (CuLLaVO)
-# GPU_DEVICE="0,1,2,3,4,5,6"
-# length=${#GPU_DEVICE}
-# n_gpu=$(((length+1)/2))
-# image_bath=4
-# test_batch=1
-
-# # CuLLaVOPipeline
-# CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
-#             accelerate launch --config_file configs/accel/ddp_accel.yaml \
-#             --num_processes=$n_gpu \
-#             entry.py train \
-#             --conf_files configs/cullavo_step1.yaml \
-#             --overrides \
-#             WANDB True \
-#             PIPELINE CuLLaVOPipeline\
-#             COCO.TRAIN.BATCH_SIZE_TOTAL $((n_gpu * image_bath)) \
-#             COCO.TRAIN.BATCH_SIZE_PER_GPU $image_bath \
-#             COCO.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
-#             VLP.TRAIN.BATCH_SIZE_TOTAL $((n_gpu * image_bath)) \
-#             VLP.TRAIN.BATCH_SIZE_PER_GPU $image_bath \
-#             VLP.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
-#             REF.TEST.BATCH_SIZE_TOTAL $n_gpu \
-#             VQA.TEST.BATCH_SIZE_TOTAL $n_gpu \
-
-
-# Stage2-PRE (CuLLaVO)
 GPU_DEVICE="0,1,2,3,4,5,6"
 length=${#GPU_DEVICE}
 n_gpu=$(((length+1)/2))
-main_port=10000
-image_bath=1
+image_bath=4
 test_batch=1
 
 # CuLLaVOPipeline
 CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
             accelerate launch --config_file configs/accel/ddp_accel.yaml \
             --num_processes=$n_gpu \
-            --main_process_port=$main_port \
-            entry.py eval \
-            --conf_files configs/cullavo_step2_pre.yaml \
+            entry.py train \
+            --conf_files configs/cullavo_step1.yaml \
             --overrides \
-            WANDB False \
-            PIPELINE CuLLaVOPipeline \
-            SHAREGPT.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
-            WEIGHT True \
-            RESUME_FROM /mnt/hard/lbk-cvpr/CuLLaVO/epoch1/CuLLaVO.pt \
+            WANDB True \
+            PIPELINE CuLLaVOPipeline\
+            COCO.TRAIN.BATCH_SIZE_TOTAL $((n_gpu * image_bath)) \
+            COCO.TRAIN.BATCH_SIZE_PER_GPU $image_bath \
+            COCO.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
+            VLP.TRAIN.BATCH_SIZE_TOTAL $((n_gpu * image_bath)) \
+            VLP.TRAIN.BATCH_SIZE_PER_GPU $image_bath \
+            VLP.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
+            REF.TEST.BATCH_SIZE_TOTAL $n_gpu \
+            VQA.TEST.BATCH_SIZE_TOTAL $n_gpu \
+
+
+# Stage2-PRE (CuLLaVO)
+# GPU_DEVICE="0,1,2,3,4,5,6"
+# length=${#GPU_DEVICE}
+# n_gpu=$(((length+1)/2))
+# main_port=10000
+# image_bath=1
+# test_batch=1
+
+# # CuLLaVOPipeline
+# CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
+#             accelerate launch --config_file configs/accel/ddp_accel.yaml \
+#             --num_processes=$n_gpu \
+#             --main_process_port=$main_port \
+#             entry.py eval \
+#             --conf_files configs/cullavo_step2_pre.yaml \
+#             --overrides \
+#             WANDB False \
+#             PIPELINE CuLLaVOPipeline \
+#             SHAREGPT.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
+#             WEIGHT True \
+#             RESUME_FROM /mnt/hard/lbk-cvpr/CuLLaVO/epoch1/CuLLaVO.pt \
