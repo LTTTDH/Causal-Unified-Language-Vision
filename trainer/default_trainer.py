@@ -62,8 +62,8 @@ class DefaultTrainer(UtilsTrainer, DistributedTrainer):
             self.load_model(model_path)
 
         results = self._eval_on_set()
-        if self.accel.is_main_process: self.dictionary_display(results)
-        if self.accel.is_main_process and self.opt['WANDB']: wandb.log(results)
+        # if self.accel.is_main_process: self.dictionary_display(results)
+        # if self.accel.is_main_process and self.opt['WANDB']: wandb.log(results)
         return results
     
     

@@ -91,7 +91,7 @@ class CuLLaVO(nn.Module):
         interpolated_images = torch.cat(interp_image_list, dim=0)
 
         # CuLLaVO: llm preparation
-        cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[1], 
+        cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[5], 
                                                          prompt=f"provide multiple object names with their numbering index and the objects' bounding box coordinates in this image.", 
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
@@ -128,9 +128,8 @@ class CuLLaVO(nn.Module):
         filt = "Sure, it is person (#1), refrigerator (#1), couch (#1), tv (#1), potted plant (#1), potted plant (#2), vase (#1). There are 7 objects in this image."
 
 
-        i=0
         # CuLLaVO: llm preparation
-        cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[i], 
+        cullavo_inputs = self.cullavo_model.eval_process(images=interpolated_images[0], 
                                                          prompt=f"provide multiple object names with their numbering index and the objects' bounding box coordinates in this image.", 
                                                          processor=self.cullavo_processor, 
                                                          device=accel.device)
@@ -140,26 +139,13 @@ class CuLLaVO(nn.Module):
             generate_ids = self.cullavo_model.generate(**cullavo_inputs, do_sample=True, temperature=0.9, top_k=50, top_p=0.95, max_new_tokens=1000, use_cache=True)
         decoded_text = self.cullavo_processor.batch_decode(generate_ids, skip_special_tokens=True)[0]
         
-
-        # finding
-        def find(s, ch):
-            return [i for i, ltr in enumerate(s) if ltr == ch]
-        start_index = find(decoded_text, '[')
-        end_index = find(decoded_text, ']')
-
-        # box parsing
-        box_list = []
-        assert len(start_index) == len(end_index)
-        for s, e in zip(start_index, end_index):
-            box_list.append(eval(decoded_text[s: e+1]))
-        box_tensor = torch.tensor(box_list)
-
         # BOX visualizer
-        from cullavo.utils.utils import color_list
+        from detectron2.structures import Boxes
         from detectron2.utils.visualizer import Visualizer
-        img = interpolated_images[i].permute(1,2,0).cpu().numpy()
+        img = interpolated_images[5].permute(1,2,0).cpu().numpy()
         vis = Visualizer(img)
-        out = vis.overlay_instances(boxes=box_tensor*336, assigned_colors=color_list[:box_tensor.shape[0]], alpha=1).get_image()
+        vis._default_font_size=16
+        out = vis.draw_box(torch.tensor([0.423, 0.851, 0.991, 0.988])*336, alpha=1, edge_color='red').get_image()
 
 
         # CuLLaVO 
