@@ -375,6 +375,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
 
                     # Visualize and Save
                     vis = Visualizer(batch['image'].permute(1,2,0).cpu().numpy())
+                    vis._default_font_size = 16 # box edge font
                     out = vis.overlay_instances(boxes=box_tensor[:len(color_list)]*336,
                                                 labels=class_list, 
                                                 assigned_colors=color_list[:box_tensor.shape[0]],
