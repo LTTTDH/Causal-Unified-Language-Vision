@@ -419,41 +419,93 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
         batched_cullavo_prompt = []
         batched_cullavo_label = []
         for batch in batched_inputs:
-            # image append
-            images_list.append(batch['image'])
-            
+
             # cullavo prompt prefix
             cullavo_prompt, cullavo_label = self.make_system_prompt(processor, device, self.config.ignore_index)
-            
-            # Drawing BBox & Seg
-            # from detectron2.utils.visualizer import Visualizer
-            # img = batch['image'].permute(1,2,0).cpu().numpy()
-            # vis = Visualizer(batch['image']['image'].permute(1,2,0).cpu().numpy())
-            # out = vis.draw_box(torch.tensor([0.391, 0.478, 0.885, 0.987])*1024).get_image()
-
-            # CuLLaVO: llm preparation for Generation
-            # cullavo_inputs = self.eval_process(images=batch['image'], 
-            #                                     prompt="provide the name of objects in the image", 
-            #                                     processor=processor, 
-            #                                     device=device)
-            
-            # # self.language_model.set_adapter(["step1","step2"])
-            # self.language_model.disable_adapters()
-            # with torch.inference_mode():
-            #     generate_ids = self.generate(**cullavo_inputs, do_sample=False, temperature=0, max_new_tokens=30, use_cache=True)
-            # decoded_text = processor.batch_decode(generate_ids)[0]
-
 
             # make prompt and answer
             for k in range(len(batch['question'])//2):
                 cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                 cullavo_label=cullavo_label, 
-                                                                prompt=batch['question'][2*k]['value'] if k!=0 else batch['question'][2*k]['value'].replace('<image>').strip(),
+                                                                prompt=batch['question'][2*k]['value'] if k!=0 else batch['question'][2*k]['value'].replace('<image>', '').strip(),
                                                                 answer=batch['question'][2*k+1]['value'],
                                                                 processor=processor,
                                                                 device=device,
                                                                 ignore_index=self.config.ignore_index)
                 
+            if 'boxes' in batch:
+                #############################################################################################################
+                # Drawing BBox & Seg
+                _color_list = deepcopy(color_list)
+                random.shuffle(_color_list)
+                from detectron2.utils.visualizer import Visualizer
+                img = batch['image'].permute(1,2,0).cpu().numpy()
+                vis = Visualizer(img)
+                vis._default_font_size=16
+                out = vis.overlay_instances(boxes=torch.tensor(batch['boxes'])*336,
+                                            assigned_colors=_color_list[:len(batch['boxes'])],
+                                            alpha=1).get_image()
+                batch['image'] = torch.from_numpy(out.transpose(2, 0, 1)).cuda()
+
+                # IMAGE -> COLOR
+                prompt = f"provide multiple bounding box colors in the image."
+                if len(_color_list[:len(batch['boxes'])])==1:
+                    answer = f"Sure, it is {list2string(_color_list[:len(batch['boxes'])])} color. There is a bounding box in the image."
+                else:
+                    answer = f"Sure, it is {list2string(_color_list[:len(batch['boxes'])])} color. There are {len(_color_list[:len(batch['boxes'])])} bounding boxes in the image."
+
+                cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                                                                                cullavo_label=cullavo_label, 
+                                                                                prompt=prompt,
+                                                                                answer=answer,
+                                                                                processor=processor,
+                                                                                device=device,
+                                                                                ignore_index=self.config.ignore_index)
+
+                # Random shuffling
+                rand_int = torch.randperm(len(batch['boxes']))[:5]
+
+                # Making cullavo prompt
+                for r_int in rand_int:
+                    box = torch.tensor(batch['boxes'])[r_int]
+                    color = _color_list[r_int]
+
+                    # Rolling dice 
+                    rolling_dice = torch.randint(high=2, low=0, size=(1,)).item()
+                    if rolling_dice == 0:
+                        # Color -> BOX
+                        prompt = f"provide a bounding box coordinate of {color} bounding box color."
+                        answer = f"Sure, it is {box2string(box)}. There is a {color} bounding box color"
+                        cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                                                                                        cullavo_label=cullavo_label, 
+                                                                                        prompt=prompt,
+                                                                                        answer=answer,
+                                                                                        processor=processor,
+                                                                                        device=device,
+                                                                                        ignore_index=self.config.ignore_index)
+                    elif rolling_dice == 1:
+                        # BOX -> Color
+                        prompt = f"provide a bounding box color of bounding box coordinate {box2string(box)}."
+                        answer = f"Sure, it is {color} color."
+                        cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
+                                                                                        cullavo_label=cullavo_label, 
+                                                                                        prompt=prompt,
+                                                                                        answer=answer,
+                                                                                        processor=processor,
+                                                                                        device=device,
+                                                                                        ignore_index=self.config.ignore_index)
+                    else:
+                        raise Exception("This is unexpected error")
+                    
+                #############################################################################################################
+                
+            if 'image' in batch:
+                # image append
+                images_list.append(batch['image'])
+            else:
+                # image append
+                images_list.append(torch.zeros(3,336,336).cuda())
+
             # making batched cullavo prompt
             batched_cullavo_prompt.append(cullavo_prompt)
             batched_cullavo_label.append(cullavo_label)

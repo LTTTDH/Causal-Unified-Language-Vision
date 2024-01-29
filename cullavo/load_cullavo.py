@@ -24,7 +24,7 @@ def add_adapter_for_step2(cullavo_model):
     lora_vision_config = LoraConfig(
         r=64,
         lora_alpha=16,
-        target_modules=['k_proj', 'q_proj', 'up_proj', 'v_proj', 'o_proj', 'down_proj', 'gate_proj'],
+        target_modules=['v_proj', 'q_proj', 'fc2', 'k_proj', 'fc1'],
         lora_dropout=0.05,
         bias='none',
         task_type="CAUSAL_LM",
@@ -33,13 +33,31 @@ def add_adapter_for_step2(cullavo_model):
     lora_llm_config = LoraConfig(
         r=64,
         lora_alpha=16,
-        target_modules=['k_proj', 'q_proj', 'up_proj', 'v_proj', 'o_proj', 'down_proj', 'gate_proj'],
+        target_modules=['v_proj', 'q_proj', 'up_proj', 'down_proj', 'gate_proj', 'o_proj', 'k_proj'],
         lora_dropout=0.05,
         bias='none',
         task_type="CAUSAL_LM",
     )
     cullavo_model.vision_tower.add_adapter(lora_vision_config, adapter_name='step2')
     cullavo_model.language_model.add_adapter(lora_llm_config, adapter_name='step2')
+
+    # bfloat16 conversion 
+    for param in cullavo_model.parameters():
+        if 'float32' in str(param.dtype).lower():
+            param.data = param.data.to(torch.bfloat16)
+            
+    # Training MM projector
+    for param in cullavo_model.multi_modal_projector.parameters():
+        param.requires_grad_(True)
+
+    # Training lm head
+    for param in cullavo_model.language_model.lm_head.parameters():
+        param.requires_grad_(True)
+
+    # Training embed_tokens
+    for param in cullavo_model.get_input_embeddings().parameters():
+        param.requires_grad_(True)
+
 
 
 def prepare_cullavo(bits, grad_ckpt, lora):

@@ -127,6 +127,8 @@ class CuLLaVOPipeline:
             for t in temp: new_json_dict_list_extend += t
 
         # New Dataset
-        with open(f"/mnt/hard/lbk-cvpr/dataset/ShareGPT4V/data/sharegpt4v/lbk.json", "w") as f:
-            json.dump(new_json_dict_list_extend, f)
+        if trainer.accel.is_main_process:
+            with open(f"/mnt/hard/lbk-cvpr/dataset/ShareGPT4V/data/sharegpt4v/lbk_new_version.json", "w") as f:
+                json.dump(new_json_dict_list_extend, f)
+        trainer.accel.wait_for_everyone()
         return scores

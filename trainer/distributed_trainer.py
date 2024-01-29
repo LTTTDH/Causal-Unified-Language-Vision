@@ -1,10 +1,3 @@
-# --------------------------------------------------------
-# X-Decoder -- Generalized Decoding for Pixel, Image, and Language
-# Copyright (c) 2022 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
-# Modified by Xueyan Zou (xueyan@cs.wisc.edu)
-# --------------------------------------------------------
-
 import os
 import logging
 import torch

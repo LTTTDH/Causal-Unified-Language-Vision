@@ -19,5 +19,6 @@ from . import (
     register_instp_datasets,
     register_instruction_datasets,
     register_sharegpt_datasets,
+    register_lbkllava_datasets,
     register_imagenet_cls
 )

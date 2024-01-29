@@ -27,23 +27,45 @@
 
 
 # Stage2-PRE (CuLLaVO)
+# GPU_DEVICE="0,1,2,3,4,5,6"
+# length=${#GPU_DEVICE}
+# n_gpu=$(((length+1)/2))
+# main_port=10000
+# test_batch=10
+
+# # CuLLaVOPipeline
+# CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
+#             accelerate launch --config_file configs/accel/ddp_accel.yaml \
+#             --num_processes=$n_gpu \
+#             --main_process_port=$main_port \
+#             entry.py eval \
+#             --conf_files configs/cullavo_step2_pre.yaml \
+#             --overrides \
+#             WANDB False \
+#             PIPELINE CuLLaVOPipeline \
+#             SHAREGPT.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
+#             WEIGHT True \
+#             RESUME_FROM /mnt/hard/lbk-cvpr/CuLLaVO/step1/CuLLaVO.pt \
+
+
+# Stage2 (CuLLaVO)
 GPU_DEVICE="0,1,2,3,4,5,6"
 length=${#GPU_DEVICE}
 n_gpu=$(((length+1)/2))
 main_port=10000
-image_bath=1
-test_batch=10
+image_bath=4
 
 # CuLLaVOPipeline
 CUDA_VISIBLE_DEVICES=$GPU_DEVICE \
             accelerate launch --config_file configs/accel/ddp_accel.yaml \
             --num_processes=$n_gpu \
             --main_process_port=$main_port \
-            entry.py eval \
-            --conf_files configs/cullavo_step2_pre.yaml \
+            entry.py train \
+            --conf_files configs/cullavo_step2.yaml \
             --overrides \
-            WANDB False \
+            WANDB True \
             PIPELINE CuLLaVOPipeline \
-            SHAREGPT.TEST.BATCH_SIZE_TOTAL $((n_gpu * test_batch)) \
+            LBKLLAVA.TRAIN.BATCH_SIZE_TOTAL $((n_gpu * image_bath)) \
+            LBKLLAVA.TRAIN.BATCH_SIZE_PER_GPU $image_bath \
             WEIGHT True \
             RESUME_FROM /mnt/hard/lbk-cvpr/CuLLaVO/step1/CuLLaVO.pt \
