@@ -9,10 +9,9 @@ import os
 import logging
 import torch
 
-from .utils.hook import add_hook
-
 # Accelerator
-from accelerate import Accelerator
+from datetime import timedelta
+from accelerate import Accelerator, InitProcessGroupKwargs
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,8 @@ logger = logging.getLogger(__name__)
 class DistributedTrainer:
     def __init__(self, opt):
         self.opt = opt
-        self.accel = Accelerator(gradient_accumulation_steps=self.opt['OPTIMIZER']['GRAD_CUM']) # Accelerator
+        self.accel = Accelerator(gradient_accumulation_steps=self.opt['OPTIMIZER']['GRAD_CUM'],
+                                 kwargs_handlers=[InitProcessGroupKwargs(timeout=timedelta(seconds=18000))]) # Accelerator
         
         # parse environment information for distributed training
         self.opt['world_size'] = torch.distributed.get_world_size()
