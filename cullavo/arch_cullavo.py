@@ -261,7 +261,7 @@ class CuLLaVOModel(LlavaForConditionalGeneration):
                                                                                     ignore_index=self.config.ignore_index)
                 elif rolling_dice == 1:
                     # BOX -> Color
-                    prompt = f"provide a bouding box color of bounding box coordinate {box2string(box)}."
+                    prompt = f"provide a bounding box color of bounding box coordinate {box2string(box)}."
                     answer = f"Sure, it is {color} color."
                     cullavo_prompt, cullavo_label = self.make_and_add_prompt_and_label(cullavo_prompt=cullavo_prompt, 
                                                                                     cullavo_label=cullavo_label, 

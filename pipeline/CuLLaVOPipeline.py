@@ -120,15 +120,13 @@ class CuLLaVOPipeline:
                     new_json_list = model(batch, accel=trainer.accel)
                     new_json_dict_list_extend.extend(new_json_list)
         
-        # trainer.accel.wait_for_everyone()
-        # if self._opt['world_size'] > 1:
-        #     temp = self.all_gather(new_json_dict_list_extend, self._opt['world_size'])
-        #     new_json_dict_list_extend = [] 
-        #     for t in temp: new_json_dict_list_extend += t
+        trainer.accel.wait_for_everyone()
+        if self._opt['world_size'] > 1:
+            temp = self.all_gather(new_json_dict_list_extend, self._opt['world_size'])
+            new_json_dict_list_extend = [] 
+            for t in temp: new_json_dict_list_extend += t
 
         # New Dataset
-        with open(f"/mnt/hard/lbk-cvpr/dataset/ShareGPT4V/data/sharegpt4v/lbk_{trainer.accel.device}.json", "w") as f:
+        with open(f"/mnt/hard/lbk-cvpr/dataset/ShareGPT4V/data/sharegpt4v/lbk.json", "w") as f:
             json.dump(new_json_dict_list_extend, f)
-        if self._opt['world_size'] > 1: torch.distributed.barrier()
-
         return scores
